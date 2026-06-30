@@ -15,6 +15,7 @@ import {
   UserCog,
   Users,
   BarChart2,
+  Search,
 } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
 import { ROLE_LABELS } from "@/lib/auth"
@@ -24,6 +25,7 @@ const navItems = [
   { href: "/emargement",    label: "Émargement",      icon: ClipboardCheck,  accent: "bg-ateliers-light text-ateliers-dark",           dot: "bg-ateliers" },
   { href: "/assiduite",     label: "Assiduité",        icon: BarChart2,        accent: "bg-absences-light text-absences-dark",            dot: "bg-absences" },
   { href: "/finances",      label: "Finances",        icon: Euro,            accent: "bg-finances-light text-finances-dark",           dot: "bg-finances" },
+  { href: "/veille-subventions", label: "Veille subventions", icon: Search,     accent: "bg-subventions-light text-subventions-dark",     dot: "bg-subventions" },
   { href: "/ateliers",       label: "Ateliers",        icon: BookOpen,        accent: "bg-ateliers-light text-ateliers-dark",           dot: "bg-ateliers" },
   { href: "/beneficiaires", label: "Bénéficiaires",   icon: Users,           accent: "bg-ateliers-light text-ateliers-dark",           dot: "bg-ateliers" },
   { href: "/communication", label: "Communication",   icon: Megaphone,       accent: "bg-communication-light text-communication-dark", dot: "bg-communication" },
