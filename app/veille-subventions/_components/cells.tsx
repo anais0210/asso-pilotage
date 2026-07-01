@@ -32,7 +32,7 @@ interface IntituleCellProps {
 
 export function IntituleCell({ intitule, url, secteurs }: IntituleCellProps) {
   const display = intitule || "(sans titre)"
-  const titleClass = "font-medium text-foreground line-clamp-2 break-words"
+  const titleClass = "font-semibold text-foreground line-clamp-2 break-words"
   return (
     <>
       {url ? (
@@ -233,6 +233,88 @@ export function ResponsableCell({ responsable, options, intitule, pending, edita
         <option key={r} value={r}>{r}</option>
       ))}
     </select>
+  )
+}
+
+// ── Atelier (dropdown Oui / Non ou texte en lecture seule) ─────────────────────
+
+interface AtelierCellProps {
+  atelier: string
+  intitule: string
+  pending: boolean
+  /** Si false → texte en lecture seule. Si true → dropdown éditable. */
+  editable: boolean
+  onChange: (newAtelier: string) => void
+}
+
+/** Couleurs du badge selon la valeur (Oui = vert, Non = gris, vide = muet). */
+function atelierClasses(v: string): string {
+  if (v === "Oui") return "bg-emerald-100 text-emerald-700"
+  if (v === "Non") return "bg-slate-100 text-slate-600"
+  return "bg-slate-50 text-slate-400 italic"
+}
+
+export function AtelierCell({ atelier, intitule, pending, editable, onChange }: AtelierCellProps) {
+  // Valeur présente mais hors Oui/Non → obsolète, on la garde sélectionnable
+  const isObsolete = !!atelier && atelier !== "Oui" && atelier !== "Non"
+
+  if (!editable) {
+    return atelier ? (
+      <span title={atelier} className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${atelierClasses(atelier)}`}>
+        {atelier}
+      </span>
+    ) : (
+      <span className="text-muted text-sm">—</span>
+    )
+  }
+
+  return (
+    <select
+      value={atelier}
+      disabled={pending}
+      onChange={(e) => onChange(e.target.value)}
+      aria-label={`Atelier — ${intitule}`}
+      title={isObsolete ? `${atelier} (valeur inattendue)` : atelier || "Non renseigné"}
+      className={`w-full text-xs font-medium px-2 py-0.5 rounded border-0 cursor-pointer focus:outline-none focus:ring-2 focus:ring-subventions truncate ${atelierClasses(atelier)} ${pending ? "cursor-wait" : ""}`}
+      style={{
+        appearance: "none",
+        WebkitAppearance: "none",
+        paddingRight: "1.25rem",
+        backgroundImage: SELECT_CHEVRON_BG,
+        backgroundRepeat: "no-repeat",
+        backgroundPosition: "right 0.4rem center",
+      }}
+    >
+      <option value="">— Non renseigné —</option>
+      {isObsolete && <option value={atelier}>⚠ {atelier}</option>}
+      <option value="Oui">Oui</option>
+      <option value="Non">Non</option>
+    </select>
+  )
+}
+
+// ── Bilan (case à cocher) ──────────────────────────────────────────────────────
+
+interface BilanCellProps {
+  checked: boolean
+  intitule: string
+  pending: boolean
+  /** Si false → case en lecture seule (désactivée). */
+  editable: boolean
+  onChange: (checked: boolean) => void
+}
+
+export function BilanCell({ checked, intitule, pending, editable, onChange }: BilanCellProps) {
+  return (
+    <input
+      type="checkbox"
+      checked={checked}
+      disabled={!editable || pending}
+      onChange={(e) => onChange(e.target.checked)}
+      aria-label={`Bilan — ${intitule}`}
+      title="Bilan"
+      className="accent-subventions w-4 h-4 align-middle cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
+    />
   )
 }
 

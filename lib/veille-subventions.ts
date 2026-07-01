@@ -55,6 +55,24 @@ export function isStatutCanonique(s: string | undefined): boolean {
   return !!s && (STATUT_VALUES as readonly string[]).includes(s)
 }
 
+// ── Atelier (oui / non) ────────────────────────────────────────────────────────
+
+/** Valeurs possibles de la colonne « Atelier » (rempli à la main). */
+export const ATELIER_VALUES = ["Oui", "Non"] as const
+
+export type AtelierValue = (typeof ATELIER_VALUES)[number]
+
+// ── Bilan (case à cocher) ──────────────────────────────────────────────────────
+
+/**
+ * True si la cellule « Bilan » est cochée. Le Sheet utilise une case à cocher
+ * native (TRUE/FALSE) ; on tolère aussi quelques variantes texte par robustesse.
+ */
+export function isBilanChecked(v: string | undefined): boolean {
+  const s = (v ?? "").trim().toLowerCase()
+  return s === "true" || s === "vrai" || s === "oui" || s === "x" || s === "1"
+}
+
 // ── Types partagés API ↔ UI ───────────────────────────────────────────────────
 
 export interface SheetRow { [columnName: string]: string }
@@ -85,6 +103,8 @@ export interface ResolvedColumns {
   intitule: string | null
   organisme: string | null
   type: string | null
+  atelier: string | null
+  bilan: string | null
   montantMin: string | null
   montantMax: string | null
   dateLimite: string | null
@@ -121,6 +141,8 @@ export function resolveColumns(headers: string[]): ResolvedColumns {
     intitule:    findCol(headers, ["intitule", "intitulé", "titre", "nom"]),
     organisme:   findCol(headers, ["organisme", "financeur"]),
     type:        findCol(headers, ["type"]),
+    atelier:     findCol(headers, ["atelier"]),
+    bilan:       findCol(headers, ["bilan"]),
     montantMin:  findCol(headers, ["montant_min", "montant min"]),
     montantMax:  findCol(headers, ["montant_max", "montant max", "montant"]),
     dateLimite:  findCol(headers, ["date_limite_depot", "date_limite", "date limite", "echeance", "deadline"]),

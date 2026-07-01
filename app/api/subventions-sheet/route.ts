@@ -11,6 +11,7 @@ import {
   CSV_URL,
   OPEN_URL,
   parseCsv,
+  resolveColumns,
   type SheetErrorResponse,
   type SheetResponse,
 } from "@/lib/veille-subventions"
@@ -60,9 +61,15 @@ export async function GET() {
     const csv = new TextDecoder("utf-8").decode(buf)
     const { headers, rows } = parseCsv(csv)
 
+    // Ne garder que les vraies subventions (celles qui ont un ID). Sans ce filtre,
+    // les lignes vides du Sheet contenant une case à cocher « Bilan » (FALSE)
+    // ne sont plus « entièrement vides » et seraient comptées comme des lignes.
+    const cols = resolveColumns(headers)
+    const dataRows = cols.id ? rows.filter((r) => (r[cols.id!] ?? "").trim() !== "") : rows
+
     const payload: SheetResponse = {
       headers,
-      rows,
+      rows: dataRows,
       fetchedAt: new Date().toISOString(),
       sourceUrl: OPEN_URL,
     }

@@ -27,7 +27,7 @@ const MAX_ATTEMPTS = 2
 
 export async function callSheetsWebApp(
   action: SheetsAction,
-  payload: { id: string; statut?: string; responsable?: string },
+  payload: { id: string; statut?: string; responsable?: string; atelier?: string; bilan?: boolean },
 ): Promise<SheetsCallResult> {
   const url = process.env.SHEETS_WEBAPP_URL
   const token = process.env.SHEETS_WEBAPP_TOKEN
