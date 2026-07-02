@@ -4,13 +4,8 @@ import { useState, useEffect } from "react"
 import Link from "next/link"
 import { ChevronRight, Users } from "lucide-react"
 import SlideOver from "@/components/SlideOver"
-
-const STORAGE_POSTS = "asso-communication-posts"
-
-function load<T>(key: string, fallback: T): T {
-  if (typeof window === "undefined") return fallback
-  try { const s = localStorage.getItem(key); return s ? JSON.parse(s) : fallback } catch { return fallback }
-}
+import Pagination, { usePagination } from "@/components/Pagination"
+import { fetchPosts } from "@/lib/sheets-api"
 
 // ──────────────────────────────────────────────
 // Types (miroir de communication/page.tsx)
@@ -19,7 +14,7 @@ type Plateforme    = "LinkedIn" | "Instagram" | "Facebook"
 type CategoriePost = "atelier" | "autre"
 
 interface PlatformeContent { contenu?: string; tags?: string; lien?: string }
-interface MediaItem        { nom: string; type: string; preview?: string }
+interface MediaItem        { nom: string; type: string; url?: string }
 interface PostParticipant  { id: number; prenom: string; nom: string }
 interface PostParticipants { apprenantes: PostParticipant[]; benevoles: string[]; formatrices: string[] }
 
@@ -63,13 +58,16 @@ export default function PubliesPage() {
   const [slideOpen, setSlideOpen] = useState(false)
 
   useEffect(() => {
-    const all = load<Post[]>(STORAGE_POSTS, [])
-    setPosts(
-      all.filter(p => p.statut === "publié").sort((a, b) => b.date.localeCompare(a.date))
-    )
+    fetchPosts()
+      .then(all => setPosts(
+        (all as unknown as Post[]).filter(p => p.statut === "publié").sort((a, b) => b.date.localeCompare(a.date))
+      ))
+      .catch(e => console.error("Échec chargement des posts publiés (Google Sheets)", e))
   }, [])
 
   function openPost(p: Post) { setSelected(p); setSlideOpen(true) }
+
+  const { pageItems: pagedPosts, page, setPage, pageSize, changePageSize, total, totalPages } = usePagination(posts, "asso-communication-publies-page-size")
 
   return (
     <div className="p-8 max-w-5xl mx-auto">
@@ -97,7 +95,7 @@ export default function PubliesPage() {
         </div>
       ) : (
         <div className="grid grid-cols-3 gap-4">
-          {posts.map(p => (
+          {pagedPosts.map(p => (
             <div
               key={p.id}
               onClick={() => openPost(p)}
@@ -132,6 +130,9 @@ export default function PubliesPage() {
             </div>
           ))}
         </div>
+      )}
+      {posts.length > 0 && (
+        <Pagination page={page} totalPages={totalPages} total={total} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={changePageSize} accentClass="focus:ring-2 focus:ring-communication/30" />
       )}
 
       {/* SlideOver lecture */}
@@ -221,9 +222,9 @@ export default function PubliesPage() {
                 <p className="text-xs font-semibold text-foreground">Médias</p>
                 <div className="flex gap-2 flex-wrap">
                   {(selected.media ?? []).map((m, i) =>
-                    m.preview
-                      ? <img key={i} src={m.preview} alt={m.nom} className="h-20 w-20 rounded-lg object-cover border border-border" />
-                      : <div key={i} className="h-20 w-20 rounded-lg border border-border bg-slate-100 flex items-center justify-center text-[10px] text-muted text-center p-1 leading-tight">{m.nom}</div>
+                    m.type === "image" && m.url
+                      ? <img key={i} src={m.url} alt={m.nom} width={80} height={80} loading="lazy" className="h-20 w-20 rounded-lg object-cover border border-border" />
+                      : <div key={i} className="h-20 w-20 rounded-lg border border-border bg-slate-100 flex items-center justify-center text-[10px] text-muted text-center p-1 leading-tight">{m.type === "video" ? "🎬 Vidéo" : m.nom}</div>
                   )}
                 </div>
               </div>

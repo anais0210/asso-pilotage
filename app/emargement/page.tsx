@@ -1,324 +1,443 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { ateliers as ateliersMock } from "@/lib/mock-data"
-import { Phone, AlertTriangle, CheckCircle, Clock, XCircle, ChevronDown, ClipboardCheck } from "lucide-react"
+import { useState, useEffect, useCallback, useRef, type KeyboardEvent as ReactKeyboardEvent } from "react"
+import { ChevronDown, ClipboardCheck, CheckCheck, Search, Check } from "lucide-react"
 
 // ──────────────────────────────────────────────
-// Types partagés avec ateliers/page.tsx
+// Types — lecture depuis Google Sheets (voir app/api/sheets/route.ts)
 // ──────────────────────────────────────────────
 type PresenceStatus = "présent" | "absent" | "excusé" | "retard"
+const STATUTS: PresenceStatus[] = ["présent", "absent", "excusé", "retard"]
 
-interface Session {
-  id: number; titre: string; date: string; heure: string
-  salle: string; formatrice: string
-  beneficiaireIds: number[]; statut: string
+interface AtelierSheet {
+  ID_Atelier: string
+  Categorie: string
+  Groupe: string
+  Titre: string
+  Audience: string
+  Date_Debut: string
+  Date_Fin: string
+  Heure_Debut: string
+  Salle: string
+  beneficiaireIds: string[]
 }
-interface Beneficiaire {
-  id: number; prenom: string; nom: string
-  telephone: string
-  nomParent: string; telephoneParent: string
-  dateNaissance?: string
-  niveau: string; statut: string
+interface BeneficiaireSheet {
+  ID_Personne: string
+  type: "eleve" | "parent"
+  Prenom: string
+  Nom: string
+}
+interface AssiduiteSheet {
+  ID_Assiduite: string
+  ID_Evenement: string
+  ID_Seance: string
+  ID_Personne: string
+  Statut: string
+  Notes: string
+}
+interface SeanceSheet {
+  ID_Seance: string
+  ID_Atelier: string
+  Nom: string
+  Date: string
+  Heure_Debut: string
+  Heure_Fin: string
+  Salle: string
+  Statut: string
 }
 
-// ──────────────────────────────────────────────
-// Storage — mêmes clés que la page ateliers
-// ──────────────────────────────────────────────
-const S_SESSIONS    = "asso-ateliers-sessions"
-const S_BENEF       = "asso-beneficiaires"
-const S_PRESENCES   = (id: number) => `asso-presences-atelier-${id}`
-const S_SELECTED    = "asso-emargement-session"
-const SEUIL_ALERTE  = 3  // absences avant alerte décrochage
-
-function loadJson<T>(key: string, fallback: T): T {
-  if (typeof window === "undefined") return fallback
-  try { const s = localStorage.getItem(key); return s ? JSON.parse(s) : fallback } catch { return fallback }
+function normStatut(v: string): PresenceStatus {
+  const n = (v ?? "").toLowerCase()
+  if (n.startsWith("absent")) return "absent"
+  if (n.startsWith("excus")) return "excusé"
+  if (n.startsWith("retard")) return "retard"
+  return "présent"
 }
 
-// ──────────────────────────────────────────────
-// Config statuts
-// ──────────────────────────────────────────────
-const STATUS_CONFIG: Record<PresenceStatus, { label: string; bg: string; text: string; icon: React.ReactNode }> = {
-  présent: { label: "Présent",  bg: "bg-finances-light",      text: "text-finances-dark",      icon: <CheckCircle size={13} /> },
-  absent:  { label: "Absent",   bg: "bg-absences-light",      text: "text-absences-dark",      icon: <XCircle size={13} /> },
-  excusé:  { label: "Excusé",   bg: "bg-blue-50",             text: "text-blue-700",            icon: <Clock size={13} /> },
-  retard:  { label: "Retard",   bg: "bg-communication-light", text: "text-communication-dark",  icon: <Clock size={13} /> },
+const S_SELECTED = "asso-emargement-session"
+const S_SELECTED_SEANCE = "asso-emargement-seance"
+
+/** Convertit "16/02/2026" (format Sheet) en "2026-02-16" pour un tri chronologique correct. */
+function frToIsoSort(d: string): string {
+  const m = (d ?? "").match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : (d ?? "")
 }
 
-const STATUS_CYCLE: PresenceStatus[] = ["présent", "absent", "excusé", "retard"]
+/** Libellé lisible d'un atelier (catégorie · groupe, audience, date). */
+function atelierLabel(a: AtelierSheet): string {
+  const base = [a.Categorie, a.Groupe].filter(Boolean).join(" · ") || a.Titre
+  const audience = a.Audience ? ` (${a.Audience})` : ""
+  const date = a.Date_Debut ? ` — ${a.Date_Debut}` : ""
+  return `${base}${audience}${date}`
+}
+
+/** Normalise (minuscules + sans accents) pour une recherche tolérante. */
+const normalize = (s: string) =>
+  s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
 
 // ──────────────────────────────────────────────
-// Page
+// Sélecteur d'atelier avec barre de recherche.
+// Combobox accessible (clavier + clic) : ouvre un panneau contenant un champ
+// de recherche filtrant la liste, pour sélectionner un seul atelier.
 // ──────────────────────────────────────────────
-export default function EmargementPage() {
-  const [sessions, setSessions]       = useState<Session[]>(ateliersMock.sessions as Session[])
-  const [beneficiaires, setBenef]     = useState<Beneficiaire[]>(ateliersMock.beneficiaires as Beneficiaire[])
-  const [selectedId, setSelectedId]   = useState<number>(0)
-  // presences: { sessionId → { benefId → PresenceStatus } }
-  const [allPresences, setAllPresences] = useState<Record<number, Record<number, PresenceStatus>>>({})
+function AtelierSelect({
+  ateliers,
+  selectedId,
+  onSelect,
+}: {
+  ateliers: AtelierSheet[]
+  selectedId: string
+  onSelect: (id: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState("")
+  const [highlight, setHighlight] = useState(0)
+  const boxRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
 
-  // Hydratation
+  const selected = ateliers.find(a => a.ID_Atelier === selectedId)
+  const q = normalize(query.trim())
+  const filtered = q ? ateliers.filter(a => normalize(atelierLabel(a)).includes(q)) : ateliers
+
+  // Ferme le panneau si clic en dehors.
   useEffect(() => {
-    const loadedSessions  = loadJson<Session[]>(S_SESSIONS, ateliersMock.sessions as Session[])
-    const loadedBenefs    = loadJson<Beneficiaire[]>(S_BENEF, ateliersMock.beneficiaires as Beneficiaire[])
-    setSessions(loadedSessions)
-    setBenef(loadedBenefs)
-
-    // Pré-sélection depuis le bouton "Émarger" d'un atelier
-    const preSelected = loadJson<number>(S_SELECTED, 0)
-    const firstId = loadedSessions[0]?.id ?? 0
-    setSelectedId(preSelected && loadedSessions.find(s => s.id === preSelected) ? preSelected : firstId)
-
-    // Charger toutes les présences existantes
-    const combined: Record<number, Record<number, PresenceStatus>> = {}
-    loadedSessions.forEach(s => {
-      const p = loadJson<Record<number, PresenceStatus>>(S_PRESENCES(s.id), {})
-      if (Object.keys(p).length > 0) combined[s.id] = p
-    })
-    setAllPresences(combined)
+    function onClickOutside(e: MouseEvent) {
+      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener("mousedown", onClickOutside)
+    return () => document.removeEventListener("mousedown", onClickOutside)
   }, [])
 
-  const session  = sessions.find(s => s.id === selectedId)
-  const benefs   = (session?.beneficiaireIds ?? [])
-    .map(id => beneficiaires.find(b => b.id === id))
-    .filter(Boolean) as Beneficiaire[]
-  const seancePresences = allPresences[selectedId] ?? {}
+  // Focus le champ de recherche à l'ouverture.
+  useEffect(() => {
+    if (open) { inputRef.current?.focus(); setHighlight(0) }
+  }, [open])
 
-  function toggle(benefId: number) {
-    const current = seancePresences[benefId] ?? "présent"
-    const next    = STATUS_CYCLE[(STATUS_CYCLE.indexOf(current) + 1) % STATUS_CYCLE.length]
-    const updated = { ...allPresences, [selectedId]: { ...seancePresences, [benefId]: next } }
-    setAllPresences(updated)
-    localStorage.setItem(S_PRESENCES(selectedId), JSON.stringify(updated[selectedId]))
+  function choisir(a: AtelierSheet) {
+    onSelect(a.ID_Atelier)
+    setOpen(false)
+    setQuery("")
   }
 
-  // Stats séance courante
-  const presents  = benefs.filter(b => (seancePresences[b.id] ?? "présent") === "présent").length
-  const absents   = benefs.filter(b => (seancePresences[b.id] ?? "présent") === "absent").length
-  const excuses   = benefs.filter(b => (seancePresences[b.id] ?? "présent") === "excusé").length
-  const taux      = benefs.length > 0 ? Math.round((presents / benefs.length) * 100) : 0
-  const aAppeler  = benefs.filter(b => (seancePresences[b.id] ?? "présent") === "absent")
-
-  // Décrochage — total absences sur toutes les séances
-  function totalAbsences(benefId: number): number {
-    return Object.values(allPresences).reduce((acc, sp) => {
-      return acc + (sp[benefId] === "absent" ? 1 : 0)
-    }, 0)
+  function onKeyDown(e: ReactKeyboardEvent<HTMLInputElement>) {
+    if (e.key === "ArrowDown") { e.preventDefault(); setHighlight(h => Math.min(h + 1, filtered.length - 1)) }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setHighlight(h => Math.max(h - 1, 0)) }
+    else if (e.key === "Enter") { e.preventDefault(); const a = filtered[highlight]; if (a) choisir(a) }
+    else if (e.key === "Escape") { setOpen(false) }
   }
-  const enDecrochage = beneficiaires.filter(
-    b => b.statut === "actif" && totalAbsences(b.id) >= SEUIL_ALERTE
-  )
 
   return (
-    <div className="p-8 max-w-5xl mx-auto">
+    <div ref={boxRef} className="relative w-full max-w-md">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className="w-full flex items-center justify-between gap-2 bg-surface border border-border rounded-xl px-4 py-3 text-sm font-medium cursor-pointer focus:outline-none focus:ring-2 focus:ring-ateliers text-left"
+      >
+        <span className={selected ? "truncate text-foreground" : "truncate text-muted"}>
+          {selected ? atelierLabel(selected) : "Sélectionner un atelier…"}
+        </span>
+        <ChevronDown size={16} className="text-muted shrink-0" />
+      </button>
+
+      {open && (
+        <div className="absolute z-50 mt-1 w-full bg-surface border border-border rounded-xl shadow-lg overflow-hidden">
+          <div className="p-2 border-b border-border">
+            <div className="relative">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
+              <input
+                ref={inputRef}
+                type="text"
+                value={query}
+                onChange={e => { setQuery(e.target.value); setHighlight(0) }}
+                onKeyDown={onKeyDown}
+                placeholder="Rechercher un atelier…"
+                className="w-full text-sm rounded-lg border border-border bg-surface pl-9 pr-3 py-2 focus:outline-none focus:ring-2 focus:ring-ateliers/30"
+              />
+            </div>
+          </div>
+          <ul role="listbox" className="max-h-60 overflow-y-auto py-1">
+            {filtered.length === 0 ? (
+              <li className="px-3 py-2 text-sm text-muted italic">Aucun atelier trouvé.</li>
+            ) : (
+              filtered.map((a, i) => {
+                const isSelected = a.ID_Atelier === selectedId
+                return (
+                  <li key={a.ID_Atelier} role="option" aria-selected={isSelected}>
+                    <button
+                      type="button"
+                      onClick={() => choisir(a)}
+                      onMouseEnter={() => setHighlight(i)}
+                      className={`w-full flex items-center gap-2 text-left px-3 py-2 text-sm transition-colors ${
+                        i === highlight ? "bg-ateliers-light text-ateliers-dark" : "text-foreground"
+                      }`}
+                    >
+                      <Check size={14} className={isSelected ? "shrink-0 text-ateliers-dark" : "shrink-0 opacity-0"} />
+                      <span className="truncate">{atelierLabel(a)}</span>
+                    </button>
+                  </li>
+                )
+              })
+            )}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default function EmargementPage() {
+  const [ateliers, setAteliers] = useState<AtelierSheet[]>([])
+  const [beneficiaires, setBeneficiaires] = useState<BeneficiaireSheet[]>([])
+  const [selectedId, setSelectedId] = useState<string>("")
+  const [loading, setLoading] = useState(true)
+  const [erreur, setErreur] = useState<string | null>(null)
+
+  // ── Séances de l'atelier sélectionné ──
+  // "" = pas de séance précise choisie → émargement au niveau de l'atelier entier
+  // (rétrocompatible avec les ateliers qui n'ont pas encore de séances définies).
+  const [seances, setSeances] = useState<SeanceSheet[]>([])
+  const [selectedSeanceId, setSelectedSeanceId] = useState<string>("")
+
+  // État courant de la feuille d'émargement de l'atelier sélectionné :
+  // { personneId → { statut, commentaire } }
+  const [rows, setRows] = useState<Record<string, { statut: PresenceStatus; commentaire: string }>>({})
+  const [savingId, setSavingId] = useState<string | null>(null)
+
+  // ── Chargement initial : tous les ateliers (élèves + parents) + bénéficiaires ──
+  useEffect(() => {
+    Promise.all([
+      fetch("/api/sheets?action=getAteliers").then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))),
+      fetch("/api/sheets?action=getBeneficiaires").then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))),
+    ])
+      .then(([ats, befs]: [AtelierSheet[], BeneficiaireSheet[]]) => {
+        setAteliers(ats)
+        setBeneficiaires(befs)
+        const preSelected = localStorage.getItem(S_SELECTED) ?? ""
+        const initial = ats.find(a => a.ID_Atelier === preSelected) ? preSelected : (ats[0]?.ID_Atelier ?? "")
+        setSelectedId(initial)
+      })
+      .catch(e => setErreur(String(e)))
+      .finally(() => setLoading(false))
+  }, [])
+
+  const atelier = ateliers.find(a => a.ID_Atelier === selectedId)
+  const roster = (atelier?.beneficiaireIds ?? [])
+    .map(id => beneficiaires.find(b => b.ID_Personne === id))
+    .filter((b): b is BeneficiaireSheet => Boolean(b))
+
+  // ── Chargement des séances quand l'atelier change ──
+  useEffect(() => {
+    if (!selectedId) { setSeances([]); setSelectedSeanceId(""); return }
+    fetch(`/api/sheets?action=getSeances&idAtelier=${selectedId}`)
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((rows: SeanceSheet[]) => {
+        const sorted = [...rows].sort((a, b) => frToIsoSort(a.Date).localeCompare(frToIsoSort(b.Date)))
+        setSeances(sorted)
+        const preSelected = localStorage.getItem(S_SELECTED_SEANCE) ?? ""
+        setSelectedSeanceId(sorted.some(s => s.ID_Seance === preSelected) ? preSelected : "")
+      })
+      .catch(() => { setSeances([]); setSelectedSeanceId("") })
+  }, [selectedId])
+
+  // ── Chargement de la feuille d'émargement quand l'atelier ou la séance change ──
+  const loadRows = useCallback((atelierId: string, seanceId: string, roster: BeneficiaireSheet[]) => {
+    if (!atelierId) { setRows({}); return }
+    const params = new URLSearchParams({ action: "getAssiduite", idEvenement: atelierId })
+    if (seanceId) params.set("idSeance", seanceId)
+    fetch(`/api/sheets?${params.toString()}`)
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((records: AssiduiteSheet[]) => {
+        const byPersonne: Record<string, { statut: PresenceStatus; commentaire: string }> = {}
+        roster.forEach(b => { byPersonne[b.ID_Personne] = { statut: "présent", commentaire: "" } })
+        records.forEach(r => {
+          byPersonne[r.ID_Personne] = { statut: normStatut(r.Statut), commentaire: r.Notes ?? "" }
+        })
+        setRows(byPersonne)
+      })
+      .catch(() => setRows({}))
+  }, [])
+
+  useEffect(() => {
+    if (selectedId) loadRows(selectedId, selectedSeanceId, roster)
+    // roster dépend de `ateliers`/`beneficiaires`, déjà stables une fois chargés.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId, selectedSeanceId, ateliers, beneficiaires])
+
+  async function persist(personneId: string, statut: PresenceStatus, commentaire: string) {
+    setSavingId(personneId)
+    try {
+      await fetch("/api/sheets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "upsertAssiduite",
+          idEvenement: selectedId,
+          idSeance: selectedSeanceId || undefined,
+          idPersonne: personneId,
+          statut,
+          notes: commentaire,
+        }),
+      })
+    } finally {
+      setSavingId(null)
+    }
+  }
+
+  function changeStatut(personneId: string, statut: PresenceStatus) {
+    const commentaire = rows[personneId]?.commentaire ?? ""
+    setRows(r => ({ ...r, [personneId]: { statut, commentaire } }))
+    persist(personneId, statut, commentaire)
+  }
+
+  function changeCommentaire(personneId: string, commentaire: string) {
+    setRows(r => ({ ...r, [personneId]: { statut: r[personneId]?.statut ?? "présent", commentaire } }))
+  }
+
+  // Lit la valeur directement depuis l'événement plutôt que l'état `rows` :
+  // au moment du blur, le setRows du onChange précédent peut ne pas avoir
+  // encore été appliqué (fermeture obsolète sinon).
+  function saveCommentaire(personneId: string, statut: PresenceStatus, commentaire: string) {
+    persist(personneId, statut, commentaire)
+  }
+
+  async function toutCocherPresent() {
+    const updated = { ...rows }
+    roster.forEach(b => { updated[b.ID_Personne] = { statut: "présent", commentaire: rows[b.ID_Personne]?.commentaire ?? "" } })
+    setRows(updated)
+    // Écritures séquentielles : des appends concurrents sur la même feuille
+    // Sheets peuvent s'écraser entre eux (pas d'unicité garantie côté API).
+    for (const b of roster) {
+      await persist(b.ID_Personne, "présent", rows[b.ID_Personne]?.commentaire ?? "")
+    }
+  }
+
+  const presents = roster.filter(b => (rows[b.ID_Personne]?.statut ?? "présent") === "présent").length
+
+  return (
+    <div className="p-8 max-w-4xl mx-auto">
       <header className="mb-6 flex items-start gap-3">
         <div className="w-10 h-10 rounded-xl bg-ateliers-light flex items-center justify-center shrink-0">
           <ClipboardCheck size={20} className="text-ateliers-dark" />
         </div>
         <div>
           <h1 className="text-2xl font-bold text-foreground">Émargement</h1>
-          <p className="text-sm text-muted mt-0.5">Feuille de présence en temps réel · alertes décrochage automatiques</p>
+          <p className="text-sm text-muted mt-0.5">Feuille de présence par atelier</p>
         </div>
       </header>
 
-      {/* Sélecteur de séance */}
+      {/* Sélecteur d'atelier */}
       <div className="mb-6">
-        <label className="text-xs font-semibold text-muted uppercase tracking-wider block mb-2">Atelier</label>
-        <div className="relative w-full max-w-md">
-          <select
-            value={selectedId}
-            onChange={e => { const id = Number(e.target.value); setSelectedId(id); localStorage.setItem(S_SELECTED, String(id)) }}
-            className="w-full appearance-none bg-surface border border-border rounded-xl px-4 py-3 pr-10 text-sm font-medium text-foreground cursor-pointer focus:outline-none focus:ring-2 focus:ring-ateliers"
-          >
-            {sessions.map(s => (
-              <option key={s.id} value={s.id}>
-                {new Date(s.date).toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" })} — {s.titre} · {s.heure}
-                {s.salle ? ` · ${s.salle}` : ""}
-              </option>
-            ))}
-          </select>
-          <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
-        </div>
+        <span className="text-xs font-semibold text-muted uppercase tracking-wider block mb-2">Atelier</span>
+        <AtelierSelect
+          ateliers={ateliers}
+          selectedId={selectedId}
+          onSelect={id => { setSelectedId(id); localStorage.setItem(S_SELECTED, id) }}
+        />
       </div>
 
-      <div className="grid grid-cols-3 gap-8">
-        {/* Feuille de présence */}
-        <div className="col-span-2 space-y-4">
-          {/* Stats */}
-          <div className="grid grid-cols-4 gap-3">
-            <div className="bg-surface rounded-xl border border-border p-3 text-center">
-              <p className="text-2xl font-bold text-foreground">{benefs.length}</p>
-              <p className="text-xs text-muted mt-0.5">Inscrits</p>
-            </div>
-            <div className="bg-finances-light rounded-xl border border-finances/20 p-3 text-center">
-              <p className="text-2xl font-bold text-finances-dark">{presents}</p>
-              <p className="text-xs text-finances-dark/70 mt-0.5">Présents</p>
-            </div>
-            <div className="bg-absences-light rounded-xl border border-absences/20 p-3 text-center">
-              <p className="text-2xl font-bold text-absences-dark">{absents}</p>
-              <p className="text-xs text-absences-dark/70 mt-0.5">Absents</p>
-            </div>
-            <div className="bg-ateliers-light rounded-xl border border-ateliers/20 p-3 text-center">
-              <p className="text-2xl font-bold text-ateliers-dark">{taux}%</p>
-              <p className="text-xs text-ateliers-dark/70 mt-0.5">Présence</p>
-            </div>
+      {/* Sélecteur de séance — seulement si l'atelier a des séances définies */}
+      {seances.length > 0 && (
+        <div className="mb-6">
+          <label className="text-xs font-semibold text-muted uppercase tracking-wider block mb-2">Séance</label>
+          <div className="relative w-full max-w-md">
+            <select
+              value={selectedSeanceId}
+              onChange={e => { setSelectedSeanceId(e.target.value); localStorage.setItem(S_SELECTED_SEANCE, e.target.value) }}
+              className="w-full appearance-none bg-surface border border-border rounded-xl px-4 py-3 pr-10 text-sm font-medium text-foreground cursor-pointer focus:outline-none focus:ring-2 focus:ring-ateliers"
+            >
+              <option value="">Toutes les séances (atelier entier)</option>
+              {seances.map(s => (
+                <option key={s.ID_Seance} value={s.ID_Seance}>
+                  {s.Date}{s.Nom && ` · ${s.Nom}`}
+                  {s.Heure_Debut && ` · ${s.Heure_Debut}${s.Heure_Fin ? `–${s.Heure_Fin}` : ""}`}
+                </option>
+              ))}
+            </select>
+            <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
+          </div>
+        </div>
+      )}
+
+      {loading ? (
+        <p className="text-center text-sm text-muted py-12">Chargement des ateliers depuis Google Sheets…</p>
+      ) : erreur ? (
+        <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+          Impossible de charger les données ({erreur}).
+        </div>
+      ) : ateliers.length === 0 ? (
+        <p className="text-center text-sm text-muted py-12 italic">Aucun atelier disponible.</p>
+      ) : (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted">
+              {roster.length} participant{roster.length > 1 ? "s" : ""} · {presents} présent{presents > 1 ? "s" : ""}
+            </p>
+            <button
+              type="button"
+              onClick={toutCocherPresent}
+              disabled={roster.length === 0}
+              className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-ateliers-light text-ateliers-dark hover:opacity-80 transition-opacity disabled:opacity-40"
+            >
+              <CheckCheck size={13} /> Tout cocher présent
+            </button>
           </div>
 
-          {/* Liste bénéficiaires */}
-          <div className="bg-surface rounded-xl border border-border overflow-hidden">
-            {session && (
-              <div className="px-5 py-3 border-b border-border bg-slate-50 flex items-center justify-between">
-                <span className="text-xs font-semibold text-muted uppercase tracking-wider">{session.titre}</span>
-                <span className="text-xs text-muted">
-                  {session.formatrice && `${session.formatrice} · `}{session.heure}
-                  {session.salle && ` · ${session.salle}`}
-                </span>
-              </div>
-            )}
-            {benefs.length === 0 ? (
+          <div className="bg-surface rounded-xl border border-border overflow-hidden overflow-x-auto">
+            {roster.length === 0 ? (
               <p className="text-center text-sm text-muted py-8 italic">
-                Aucun bénéficiaire inscrit à cet atelier.<br />
-                <span className="text-xs">Ajoutez-en depuis la page Ateliers.</span>
+                Aucun bénéficiaire rattaché à cet atelier.
               </p>
             ) : (
-              <ul className="divide-y divide-border">
-                {benefs.map(b => {
-                  const status  = seancePresences[b.id] ?? "présent"
-                  const config  = STATUS_CONFIG[status]
-                  const nbAbs   = totalAbsences(b.id)
-                  const alerte  = nbAbs >= SEUIL_ALERTE
-                  return (
-                    <li key={b.id} className="px-5 py-3.5 flex items-center gap-4">
-                      <div className="w-9 h-9 rounded-full bg-ateliers-light flex items-center justify-center shrink-0">
-                        <span className="text-xs font-bold text-ateliers-dark">{b.prenom[0]}{b.nom[0]}</span>
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <p className="font-medium text-foreground text-sm">{b.prenom} {b.nom}</p>
-                          {alerte && (
-                            <span className="flex items-center gap-0.5 text-xs text-alert font-medium">
-                              <AlertTriangle size={11} /> {nbAbs} abs.
-                            </span>
-                          )}
-                        </div>
-                        {status === "absent" && (
-                          <div className="mt-0.5 space-y-0.5">
-                            {b.telephoneParent && (
-                              <a href={`tel:${b.telephoneParent.replace(/\s/g, "")}`} className="text-xs text-absences-dark underline underline-offset-2 block">
-                                {b.nomParent} · {b.telephoneParent}
-                              </a>
-                            )}
-                            {!b.telephoneParent && b.telephone && (
-                              <a href={`tel:${b.telephone.replace(/\s/g, "")}`} className="text-xs text-absences-dark underline underline-offset-2 block">
-                                {b.telephone}
-                              </a>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                      <button
-                        onClick={() => toggle(b.id)}
-                        title="Cliquer pour changer le statut"
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all hover:opacity-80 ${config.bg} ${config.text}`}
-                      >
-                        {config.icon}
-                        {config.label}
-                      </button>
-                    </li>
-                  )
-                })}
-              </ul>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-border text-left">
+                    <th className="px-4 py-2.5 font-semibold text-muted text-xs uppercase tracking-wider">Nom</th>
+                    <th className="px-4 py-2.5 font-semibold text-muted text-xs uppercase tracking-wider w-40">Statut</th>
+                    <th className="px-4 py-2.5 font-semibold text-muted text-xs uppercase tracking-wider">Commentaire</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {roster.map(b => {
+                    const row = rows[b.ID_Personne] ?? { statut: "présent" as PresenceStatus, commentaire: "" }
+                    return (
+                      <tr key={b.ID_Personne}>
+                        <td className="px-4 py-2.5">
+                          <span className="font-medium text-foreground">{b.Prenom} {b.Nom}</span>
+                          <span className="ml-2 text-[10px] text-muted">{b.type === "parent" ? "Parent" : "Élève"}</span>
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <select
+                            value={row.statut}
+                            onChange={e => changeStatut(b.ID_Personne, e.target.value as PresenceStatus)}
+                            disabled={savingId === b.ID_Personne}
+                            className="w-full text-sm rounded-lg border border-border bg-surface px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-ateliers/30"
+                          >
+                            {STATUTS.map(s => (
+                              <option key={s} value={s}>{s[0].toUpperCase() + s.slice(1)}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <input
+                            type="text"
+                            value={row.commentaire}
+                            onChange={e => changeCommentaire(b.ID_Personne, e.target.value)}
+                            onBlur={e => saveCommentaire(b.ID_Personne, row.statut, e.target.value)}
+                            placeholder="Commentaire…"
+                            className="w-full text-sm rounded-lg border border-border bg-surface px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-ateliers/30"
+                          />
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
             )}
-          </div>
-          <p className="text-xs text-muted text-center">
-            Cliquer sur un statut pour le faire tourner : Présent → Absent → Excusé → Retard
-          </p>
-        </div>
-
-        {/* Panneau latéral */}
-        <div className="space-y-4">
-          {/* À appeler */}
-          <div className="bg-absences-light rounded-xl border border-absences/30 p-4">
-            <h3 className="font-semibold text-absences-dark text-sm mb-3 flex items-center gap-2">
-              <Phone size={14} /> À appeler ({aAppeler.length})
-            </h3>
-            {aAppeler.length === 0 ? (
-              <p className="text-xs text-absences-dark/60 italic">Aucun appel nécessaire</p>
-            ) : (
-              <ul className="space-y-3">
-                {aAppeler.map(b => {
-                  const contact = b.telephoneParent
-                    ? { nom: b.nomParent || "Parent", tel: b.telephoneParent }
-                    : b.telephone
-                      ? { nom: `${b.prenom} ${b.nom}`, tel: b.telephone }
-                      : null
-                  return (
-                    <li key={b.id}>
-                      <p className="text-sm font-medium text-absences-dark">{b.prenom} {b.nom}</p>
-                      {contact ? (
-                        <div className="flex items-center gap-1.5 mt-0.5">
-                          <span className="text-[10px] text-absences-dark/60">{contact.nom}</span>
-                          <a href={`tel:${contact.tel.replace(/\s/g, "")}`} className="text-xs text-absences-dark/80 underline underline-offset-2">
-                            {contact.tel}
-                          </a>
-                        </div>
-                      ) : (
-                        <span className="text-xs text-absences-dark/50 italic">Aucun contact renseigné</span>
-                      )}
-                    </li>
-                  )
-                })}
-              </ul>
-            )}
-          </div>
-
-          {/* Alertes décrochage */}
-          <div className="bg-surface rounded-xl border border-border p-4">
-            <h3 className="font-semibold text-foreground text-sm mb-3 flex items-center gap-2">
-              <AlertTriangle size={14} className="text-alert" />
-              Décrochage ≥ {SEUIL_ALERTE} abs. ({enDecrochage.length})
-            </h3>
-            {enDecrochage.length === 0 ? (
-              <p className="text-xs text-muted italic">Aucune alerte</p>
-            ) : (
-              <ul className="space-y-2">
-                {enDecrochage.map(b => (
-                  <li key={b.id} className="flex items-center justify-between text-sm">
-                    <span className="font-medium text-foreground">{b.prenom} {b.nom}</span>
-                    <span className="text-xs font-semibold text-alert">{totalAbsences(b.id)} abs.</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-
-          {/* Récap toutes les séances */}
-          <div className="bg-surface rounded-xl border border-border p-4">
-            <h3 className="font-semibold text-foreground text-sm mb-3">Toutes les séances</h3>
-            <ul className="space-y-1.5">
-              {sessions.map(s => {
-                const sp     = allPresences[s.id] ?? {}
-                const sBenef = s.beneficiaireIds.map(id => beneficiaires.find(b => b.id === id)).filter(Boolean) as Beneficiaire[]
-                const sPresents = sBenef.filter(b => (sp[b.id] ?? "présent") === "présent").length
-                return (
-                  <li key={s.id} className="flex items-center justify-between text-xs">
-                    <button
-                      onClick={() => { setSelectedId(s.id); localStorage.setItem(S_SELECTED, String(s.id)) }}
-                      className={`text-left hover:text-foreground transition-colors truncate flex-1 ${selectedId === s.id ? "font-semibold text-ateliers-dark" : "text-muted"}`}
-                    >
-                      {new Date(s.date).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })} — {s.titre.split(" ")[0]}
-                    </button>
-                    <span className={`font-medium ml-2 shrink-0 ${selectedId === s.id ? "text-ateliers-dark" : "text-muted"}`}>
-                      {sPresents}/{sBenef.length}
-                    </span>
-                  </li>
-                )
-              })}
-            </ul>
           </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }

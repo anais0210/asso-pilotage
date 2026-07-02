@@ -5,7 +5,7 @@
 
 ## Ce qu'est ce projet
 
-Dashboard de pilotage pour une association de formation numérique (Ada Tech School).
+Dashboard de pilotage pour une association de formation numérique.
 **SaaS Next.js** — interface uniquement.
 Persistance : `localStorage` pour la plupart des modules. **Exception : le module Familles** est connecté à **Google Sheets** (API REST v4 côté serveur) — voir section "Backend Familles".
 
@@ -18,7 +18,8 @@ Persistance : `localStorage` pour la plupart des modules. **Exception : le modul
 | React | 19 | Server Components + `"use client"` explicite |
 | TypeScript | 5 | `strict: true` |
 | lucide-react | 1.16.0 | Certaines icônes n'existent pas — voir liste dans `AGENTS.md` |
-| @anthropic-ai/sdk | ^0.97.1 | Génération IA posts Communication — clé dans `.env.local` |
+| Gemini API | `fetch` natif (pas de SDK npm) | Génération IA posts Communication + OCR — clé `GEMINI_API_KEY` dans `.env.local` |
+| Claude (Anthropic SDK) | `@anthropic-ai/sdk`, `claude-haiku-4-5` | Module Rapports uniquement (template/style/gabarits + génération de contenu) — clé `ANTHROPIC_API_KEY` dans `.env.local` |
 
 ## Structure des modules
 
@@ -37,10 +38,9 @@ app/
 │   ├── page.tsx              Listing 3 onglets (Familles / Parents / Enfants)
 │   ├── [id]/page.tsx         Fiche famille + ajout membre
 │   └── [id]/membre/[membreId]/page.tsx  Fiche membre individuelle
-├── rapports/       Génération de rapports d'activité ✅ NOUVEAU — ⚠️ Phase 1 (UI mockée)
-│   ├── page.tsx              Dashboard 3 sections renommables (création/brouillons/historique)
-│   └── edition/[id]/page.tsx Écran plein écran, split-pane éditeur + panneau IA
-└── roadmap/        Matrice impact/facilité + suivi sous-actions
+└── rapports/       Génération de rapports d'activité ✅ NOUVEAU — backend Slides/Drive réel
+    ├── page.tsx              Dashboard 3 sections renommables (création/brouillons/historique)
+    └── edition/[id]/page.tsx Écran plein écran, split-pane éditeur + panneau IA
 
 components/
 ├── Sidebar.tsx     Navigation + chip utilisateur connecté
@@ -53,7 +53,6 @@ lib/
 ├── auth-context.tsx    Provider React + hook useAuth()
 ├── mock-data.ts        Données mockées (absences, finances, ateliers, com, bénévoles)
 ├── emargement-data.ts  Séances + présences initiales
-├── roadmap-data.ts     6 thèmes, 16 use cases, 43 sous-actions
 ├── sheets-api.ts       Couche client module Familles (fetch → /api/sheets)
 ├── google-sheets-server.ts  Clients Sheets + Drive (compte de service, côté serveur)
 ├── google-slides-server.ts  Client Slides + génération/sync du deck (compte de service)
@@ -64,8 +63,8 @@ lib/
 └── use-fermer-au-clic-exterieur.ts  Hook partagé : ferme un menu au clic hors de son conteneur
 
 app/api/
-├── generate-post/route.ts  POST — génère contenu + hashtags via Claude (Anthropic SDK)
-│                            Requiert ANTHROPIC_API_KEY dans .env.local
+├── generate-post/route.ts  POST — génère contenu + hashtags via Gemini (fetch natif)
+│                            Requiert GEMINI_API_KEY dans .env.local
 ├── sheets/route.ts     API REST Google Sheets v4 du module Familles (voir "Backend Familles")
 ├── slides/route.ts     API Google Slides du module Rapports (voir "Module Rapports")
 ├── rapports-template/route.ts  Analyse de template, suggestions visuelles/style, bibliothèque Drive
@@ -74,17 +73,35 @@ app/api/
 
 ## Conventions impératives
 
-### Couleurs Tailwind v4 — utiliser les classes sémantiques
-```tsx
-// ✅ Correct
-"bg-absences text-finances-dark border-ateliers/20"
+### Charte graphique « Estuaire » — à respecter pour tout ce qui touche l'UI
+> Guide complet : `docs/reference/charte-graphique-estuaire.md` — **le lire avant
+> toute modification de style, couleur, police ou composant visuel.**
 
-// ❌ Interdit
-"bg-[var(--color-absences)]"
-```
-Toutes les couleurs sont définies dans `app/globals.css` sous `@theme inline`.
-Chaque module a sa couleur : `absences`, `finances`, `ateliers`, `communication`, `benevoles`.
-Variantes disponibles : `{module}`, `{module}-light`, `{module}-dark`.
+- **Couleurs Tailwind v4 — classes sémantiques uniquement, jamais de valeur en dur.**
+  ```tsx
+  // ✅ Correct
+  "bg-absences text-finances-dark border-ateliers/20"
+
+  // ❌ Interdit
+  "bg-[var(--color-absences)]"
+  ```
+  Toutes les couleurs sont définies dans `app/globals.css` sous `@theme inline`.
+  Variantes disponibles : `{module}`, `{module}-light`, `{module}-dark`.
+- **Palette unifiée sur 3 teintes de marque** (plus de couleur unique par module) :
+  teal `#159c99` (ateliers, bénévoles, positionnement, notes, émargement) ·
+  vert forêt `#1b6840` (finances, familles) · doré `#d99a1e` (communication,
+  absences, assiduité, veille subventions). Modules sans couleur propre (Équipe,
+  Compte) → `bg-brand` (teal de marque).
+  ⚠️ Sur fond doré, utiliser la variante `-dark` avec texte blanc (le doré clair
+  échoue le contraste RGAA) — les autres teintes utilisent la couleur pleine.
+- **Typographie** : titres (`h1`–`h6`) en Poppins, texte courant en Inter — réglé
+  globalement via `app/layout.tsx` (`next/font`) + `globals.css`, rien à faire
+  page par page.
+- **`SaveButton`** (`components/SlideOver.tsx`) accepte une prop `accent` (module
+  courant, défaut `brand`) — utiliser `<SaveButton accent="finances" />` plutôt
+  qu'un style custom.
+- ⚠️ Turbopack ne recharge pas à chaud les changements de `@theme` (`globals.css`)
+  ni de `next/font` (`layout.tsx`) — redémarrer `npm run dev` après modification.
 
 ### Pattern CRUD standard
 **Chaque page avec données modifiables** suit ce pattern :
@@ -121,24 +138,44 @@ import SlideOver, { Field, Input, Select, Textarea, FormRow, SaveButton, DeleteB
 import { useAuth } from "@/lib/auth-context"
 const { user, logout } = useAuth()
 // user : AuthUser | null  →  { id, email, nom, prenom, role, createdAt }
-// role : "admin" | "formatrice" | "coordinatrice" | "benevole"
+// role : "super_admin" | "admin" | "formatrice" | "coordinatrice" | "benevole"
 ```
+L'authentification passe par **Supabase** (voir `docs/explanation/adr/007-auth-supabase.md`).
+
+### ⚠️ Règle — TOUTES les URLs passent par l'authentification
+Toute route de l'application (l'espace « dashboard » et tous ses modules) **exige une
+session authentifiée**. Une URL n'est accessible sans connexion que si elle figure
+explicitement dans les **exceptions publiques** :
+- `/login`
+- les pages légales : `/mentions-legales`, `/confidentialite`, `/accessibilite`
+  (liste `LEGAL_PATHS` dans `components/AuthGate.tsx`)
+
+Concrètement :
+- **Pages** : `components/AuthGate.tsx` redirige tout·e visiteur·se non authentifié·e vers
+  `/login` (sauf exceptions ci-dessus). Toute nouvelle page fait donc partie du périmètre
+  protégé par défaut — ne l'ajoute JAMAIS à `LEGAL_PATHS`/exceptions sans décision explicite.
+- **Routes API** (`app/api/*`) : chaque handler doit commencer par la garde serveur
+  `if (!(await getServerUser())) return 401` (`lib/supabase/server.ts`). Toute nouvelle
+  route API exposant des données ou appelant un service tiers DOIT être gardée.
 
 ### "use client" — règle
 Toutes les pages sont `"use client"` (localStorage, état, hooks).
 Les composants partagés aussi (`Sidebar`, `SlideOver`, `AuthGate`).
 Pas de Server Actions. Le module Familles appelle sa **route interne `/api/sheets`** (API REST Google Sheets v4, voir "Backend Familles") ; les autres modules restent en localStorage.
 
-## Modèle Post (Communication)
+## Modèle Post (Communication) — **Google Sheets** (feuille `CONTENUS`)
+
+> ⚠️ Depuis la migration Sheets, les posts ne sont plus en `localStorage`. Le module Communication
+> lit/écrit dans la feuille `CONTENUS` du Sheet `BDD_Asso_CRM` via `/api/sheets` (voir "Backend
+> Communication" plus bas). Seul `asso-communication-rejected` (le repère visuel "dot rouge") reste
+> en `localStorage` — c'est une annotation UI locale, pas une donnée métier.
 
 ```typescript
-// ⚠️ "en attente de validation" a été renommé "à valider" (branche Cas_4-1-2)
-// Migration auto localStorage au chargement — voir useEffect dans communication/page.tsx
 type ValidationStatus = "brouillon" | "à valider" | "validé" | "publié"
 type CategoriePost = "atelier" | "autre"
 
 interface PlatformeContent { contenu?: string; tags?: string; lien?: string }
-interface MediaItem { nom: string; type: string; preview?: string }
+interface MediaItem { nom: string; type: string; preview?: string; url?: string }  // preview = local (upload en cours), url = Drive persistée
 interface PostParticipant { id: number; prenom: string; nom: string }
 interface PostParticipants {
   apprenantes: PostParticipant[]   // IDs → cross-ref avec asso-beneficiaires
@@ -153,12 +190,11 @@ interface Post {
   titre: string
   brief?: string                     // contexte court pour la génération IA (posts "autre")
   contenu?: string                   // contenu principal
-  media?: MediaItem[]                // images (dataURL) ou vidéos (nom uniquement)
+  media?: MediaItem[]                // 1 image + 1 vidéo max (colonnes Image/Vidéo singulières du Sheet)
   plateforme: Plateforme[]           // LinkedIn | Instagram | Facebook
   plateformeContenu: Partial<Record<Plateforme, PlatformeContent>>  // surcharge par plateforme
   statut: ValidationStatus
   auteur: string
-  evenement?: string | null          // ⚠️ deprecated UI — champ conservé pour compat localStorage
   sessionId?: number | null          // lien optionnel vers une Session du module Ateliers
   participants?: PostParticipants    // uniquement pour categorie === "atelier"
 }
@@ -174,8 +210,6 @@ Tant qu'il n'est pas configuré, la liste de floutage affiche un message d'alert
 
 **Kanban :** clic sur une carte ouvre directement l'édition (pas de panneau de lecture intermédiaire).
 
-Webhook Zapier : déclenché sur `"validé"` ou `"publié"`.
-
 ## Page de seed de test (à supprimer avant prod)
 
 `/app/dev/seed/page.tsx` — injecte des données fictives dans le localStorage pour tester
@@ -187,7 +221,7 @@ IDs réservés : 9001–9099. Supprimer ce fichier + le dossier `app/dev/` avant
 - ❌ Ne pas créer `tailwind.config.ts` — config dans `globals.css`
 - ❌ Ne pas importer `Linkedin`, `Instagram`, `Facebook`, `Kanban` de lucide-react (n'existent pas en v1.16.0)
 - ❌ Ne pas utiliser `bg-[var(--color-xxx)]` — utiliser `bg-xxx`
-- ❌ Ne pas créer de routes API (`app/api/`) sans décision d'équipe — exceptions validées : `app/api/generate-post/route.ts` (génération IA), `app/api/sheets/route.ts` (backend Google Sheets du module Familles), `app/api/slides/route.ts` (backend Google Slides du module Rapports), `app/api/rapports-template/route.ts` (template/style/suggestions IA du module Rapports) et `app/api/rapports-generation/route.ts` (génération IA du contenu complet du module Rapports)
+- ❌ Ne pas créer de routes API (`app/api/`) sans décision d'équipe — exceptions validées : `app/api/generate-post/route.ts` (génération IA), `app/api/sheets/route.ts` (backend Google Sheets du module Familles), `app/api/ocr/route.ts` (OCR bulletins d'inscription via Gemini API), `app/api/subventions-sheet/*` (backend Google Sheets de la Veille subventions : lecture CSV + écriture via Web App Apps Script — nécessite `SHEETS_WEBAPP_URL` + `SHEETS_WEBAPP_TOKEN`), `app/api/slides/route.ts` (backend Google Slides du module Rapports), `app/api/rapports-template/route.ts` (template/style/suggestions IA du module Rapports) et `app/api/rapports-generation/route.ts` (génération IA du contenu complet du module Rapports)
 - ❌ Ne pas mettre de données dans l'URL (PII)
 - ❌ Ne pas casser le pattern SlideOver existant (cohérence UX)
 
@@ -204,8 +238,8 @@ IDs réservés : 9001–9099. Supprimer ce fichier + le dossier `app/dev/` avant
 ## Déploiement
 
 - **GitHub** : `github.com/anais0210/asso-pilotage`
-- **Vercel** : `asso-inky.vercel.app` (auto-deploy sur push `main`)
-- Compte démo : `admin@asso.fr` / `admin1234`
+- **Vercel** : `asso-pilotage.vercel.app` (auto-deploy sur push `main`)
+- Compte démo : `admin@asso.fr` / `AdminAsso2026!`
 
 @AGENTS.md
 
@@ -241,28 +275,26 @@ IDs réservés : 9001–9099. Supprimer ce fichier + le dossier `app/dev/` avant
 ### Structure fichiers
 ```
 app/communication/
-├── page.tsx        Page principale : calendrier, onglet Suivi (kanban), intégrations
+├── page.tsx        Page principale : calendrier, onglet Suivi (kanban)
 └── publies/
     └── page.tsx    Archive de tous les posts publiés (lecture seule + SlideOver)
 ```
 
-### Clés localStorage — Communication
-| Clé | Type | Contenu |
+### Persistance — Communication
+| Clé / Source | Type | Contenu |
 |-----|------|---------|
-| `asso-communication-posts` | `Post[]` | Tous les posts |
-| `asso-communication-rejected` | `number[]` | IDs posts repassés en brouillon via ✕ |
-| `asso-communication-integrations` | `IntegrationsConfig` | Config webhook Zapier |
+| Feuille `CONTENUS` (Google Sheets) | `Post[]` | Tous les posts — voir "Backend Communication" ci-dessous |
+| `asso-communication-rejected` (localStorage) | `number[]` | IDs posts repassés en brouillon via ✕ (annotation UI locale, pas dans Sheets) |
 
 ### Onglets de la page Communication
 1. **Calendrier** — posts uniquement, fond coloré par statut, clic sur une date = nouveau post
 2. **Suivi** — kanban 4 colonnes : Brouillon / À valider / Validé / Publié
-3. **Intégrations** — webhook Zapier/Make
 
 > ⚠️ L'onglet **Événements** a été entièrement supprimé (Cas_4-1-2).
 > Toute l'infrastructure associée a été retirée : type `Evenement`, `TypeEvenement`,
 > `EventsTab`, `STORAGE_EVENTS`, `eventsInitiaux`, `emptyEvent`, `TYPE_OPTIONS`.
-> Le champ `evenement` reste dans l'interface `Post` pour compatibilité localStorage
-> mais n'est plus affiché ni éditable.
+> Le champ `evenement` (déprécié) a depuis été retiré entièrement de l'interface `Post`
+> lors de la migration vers Google Sheets.
 
 ### Modifications réalisées en Cas_4-1-2
 
@@ -495,7 +527,8 @@ Overall average: **60-90% token reduction** on common development operations.
 - **Journal de suivi** : commentaires / appels / emails horodatés, filtrable par type, groupé par date (`components/JournalSuivi.tsx`)
 
 ### Couleur du module
-`familles` / `familles-light` / `familles-dark` (violet).
+`familles` / `familles-light` / `familles-dark` (vert forêt — charte « Estuaire »,
+voir `docs/reference/charte-graphique-estuaire.md`).
 
 ---
 
@@ -538,6 +571,7 @@ ajoutée dans la table `DOCUMENTS JOINTS`.
 ```
 GOOGLE_CLIENT_EMAIL=...@....iam.gserviceaccount.com   # compte de service
 GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+GEMINI_API_KEY=...                                    # OCR bulletins d'inscription (Google AI Studio)
 ```
 - Scopes utilisés : `spreadsheets` + `drive`.
 - Le compte de service doit avoir **accès Éditeur** au Sheet `BDD_Asso_CRM` et aux 4 dossiers Drive.
@@ -547,8 +581,39 @@ GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\
 - `calculerAge(dateStr)` — âge depuis une date `JJ/MM/AAAA`
 - `getStatut(statut)` — normalise vers `EN COURS` / `ARRÊTÉ` / `SUSPENDU`
 
-> Le reste de l'app (dashboard, communication, absences, ateliers, bénévoles, membres…)
-> reste en **localStorage** — seul Familles est passé sur Google Sheets.
+> Le reste de l'app (dashboard, absences, ateliers, bénévoles, membres…)
+> reste en **localStorage** — Familles et Communication sont passés sur Google Sheets/Drive,
+> Rapports est **hybride** (localStorage + vrai Google Slides/Drive à certains checkpoints,
+> voir plus bas).
+
+---
+
+## Backend Communication — feuille `CONTENUS` + Drive médias (implémenté)
+
+Même architecture que Familles (`/api/sheets`, compte de service), appliquée aux posts.
+
+### Feuille `CONTENUS` du Sheet `BDD_Asso_CRM`
+Colonnes d'origine : `ID | Titre | Contenu principal | Image | Vidéo | Tags | État  | Date programmée | Plateforme RS | Catégorie  | Event ID`
+(⚠️ `État ` et `Catégorie ` ont un espace final dans le Sheet — à respecter exactement dans le code).
+
+Colonnes ajoutées via `ensureColumns` (créées automatiquement au premier `addPost`/`updatePost`) pour couvrir la richesse de l'app : `Auteur`, `Brief`, `Plateforme Contenu` (JSON du `plateformeContenu` par réseau), `Participants` (JSON, posts "atelier" uniquement), `Session ID`.
+
+`Event ID` n'est **pas utilisé** par l'app (concept distinct de la feuille `EVENEMENT`, non branché sur les sessions Ateliers) — laissé vide intentionnellement.
+
+### Médias (Image / Vidéo)
+- **Une image + une vidéo max par post** (colonnes singulières) — un nouvel ajout du même type remplace le précédent dans le formulaire.
+- Upload : `uploadToDrive(nom, mimeType, base64, COMMUNICATION_MEDIA_FOLDER_ID)` puis `makeFilePublic(fileId)` (contrairement aux documents Familles, les médias de posts sont rendus **publics par lien** — nécessaire pour l'aperçu inline dans `PostPreviewCard`, et sans risque car destinés à être publiés).
+- `COMMUNICATION_MEDIA_FOLDER_ID` (`lib/google-sheets-server.ts`) : dossier Drive dédié, à partager manuellement en Éditeur avec le compte de service (le compte de service n'est pas membre du Drive partagé existant, donc ne peut pas y créer de dossier lui-même).
+- Suppression best-effort du fichier Drive à la suppression d'un post (`deletePost`, extraction du `fileId` depuis l'URL `?id=...`).
+
+### Fichiers clés
+| Fichier | Rôle |
+|---|---|
+| `lib/sheets-api.ts` | `fetchPosts`, `addPost`, `updatePost`, `deletePost`, `uploadPostMedia` |
+| `app/api/sheets/route.ts` | Actions `getPosts`/`addPost`/`updatePost`/`deletePost`/`uploadPostMedia`, mapping `rowToPost`/`postWriteMap` |
+| `lib/google-sheets-server.ts` | `ensureColumns` (ajout de plusieurs colonnes en 1 lecture), `COMMUNICATION_MEDIA_FOLDER_ID` |
+
+> `asso-communication-rejected` reste en `localStorage` (annotation UI, pas une donnée métier — voir section Communication).
 
 ---
 

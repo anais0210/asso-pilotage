@@ -1,56 +1,47 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useState } from "react"
 import { useAuth } from "@/lib/auth-context"
-import {
-  updateUser, deleteUser, getAllUsers, register,
-  ROLE_LABELS, type AuthUser, type Role,
-} from "@/lib/auth"
-import SlideOver, { Field, Input, Select, FormRow, SaveButton, DeleteButton } from "@/components/SlideOver"
-import { UserCircle, Plus, Pencil, AlertTriangle, ShieldCheck } from "lucide-react"
+import { type AuthUser } from "@/lib/auth"
+import { updateOwnProfile, updateOwnPassword } from "@/lib/auth-client"
+import { Field, Input } from "@/components/SlideOver"
+import { UserCircle } from "lucide-react"
 
 // ──────────────────────────────────────────────
 // Formulaire profil (section Mon profil)
+//
+// La gestion des comptes collaborateur·ices (création / édition / suppression)
+// vit désormais uniquement dans le module Équipe (/membres). Cette page ne
+// concerne que le profil de l'utilisateur·ice connecté·e.
 // ──────────────────────────────────────────────
-function ProfilSection({ user, onUpdated, onDeleted }: {
+function ProfilSection({ user, onUpdated }: {
   user: AuthUser
   onUpdated: () => void
-  onDeleted: () => void
 }) {
-  const router = useRouter()
   const [form, setForm] = useState({ prenom: user.prenom, nom: user.nom, email: user.email })
   const [pwdForm, setPwdForm] = useState({ newPwd: "", confirmPwd: "" })
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
-  const [confirmDelete, setConfirmDelete] = useState(false)
 
-  function handleSaveProfil(e: React.FormEvent) {
+  async function handleSaveProfil(e: React.FormEvent) {
     e.preventDefault()
     setError(""); setSuccess("")
-    const res = updateUser(user.id, { prenom: form.prenom, nom: form.nom, email: form.email })
+    const res = await updateOwnProfile({ prenom: form.prenom, nom: form.nom, email: form.email })
     if (!res.ok) { setError(res.error ?? "Erreur."); return }
     setSuccess("Profil mis à jour.")
     onUpdated()
   }
 
-  function handleChangePwd(e: React.FormEvent) {
+  async function handleChangePwd(e: React.FormEvent) {
     e.preventDefault()
     setError(""); setSuccess("")
     if (!pwdForm.newPwd) { setError("Nouveau mot de passe requis."); return }
     if (pwdForm.newPwd !== pwdForm.confirmPwd) { setError("Les mots de passe ne correspondent pas."); return }
     if (pwdForm.newPwd.length < 6) { setError("Minimum 6 caractères."); return }
-    const res = updateUser(user.id, { password: pwdForm.newPwd })
+    const res = await updateOwnPassword(pwdForm.newPwd)
     if (!res.ok) { setError(res.error ?? "Erreur."); return }
     setPwdForm({ newPwd: "", confirmPwd: "" })
     setSuccess("Mot de passe modifié.")
-  }
-
-  function handleDelete() {
-    const res = deleteUser(user.id)
-    if (!res.ok) { setError(res.error ?? "Erreur."); return }
-    onDeleted()
-    router.replace("/login")
   }
 
   return (
@@ -64,7 +55,7 @@ function ProfilSection({ user, onUpdated, onDeleted }: {
           <p className="font-semibold text-foreground text-lg">{user.prenom} {user.nom}</p>
           <p className="text-sm text-muted">{user.email}</p>
           <span className="mt-1 inline-block text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">
-            {ROLE_LABELS[user.role]}
+            {user.isAdmin ? "Administratrice" : "Membre de l'équipe"}
           </span>
         </div>
       </div>
@@ -87,7 +78,7 @@ function ProfilSection({ user, onUpdated, onDeleted }: {
           <Field label="Email" required>
             <Input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
           </Field>
-          <button type="submit" className="self-start px-5 py-2 bg-slate-900 text-white rounded-xl text-sm font-medium hover:bg-slate-700 transition-colors">
+          <button type="submit" className="self-start px-5 py-2 bg-brand text-white rounded-xl text-sm font-medium hover:bg-brand-dark transition-colors">
             Enregistrer
           </button>
         </form>
@@ -105,181 +96,10 @@ function ProfilSection({ user, onUpdated, onDeleted }: {
               <Input type="password" placeholder="Identique" value={pwdForm.confirmPwd} onChange={e => setPwdForm(f => ({ ...f, confirmPwd: e.target.value }))} />
             </Field>
           </div>
-          <button type="submit" className="self-start px-5 py-2 bg-slate-900 text-white rounded-xl text-sm font-medium hover:bg-slate-700 transition-colors">
+          <button type="submit" className="self-start px-5 py-2 bg-brand text-white rounded-xl text-sm font-medium hover:bg-brand-dark transition-colors">
             Modifier le mot de passe
           </button>
         </form>
-      </div>
-
-      {/* Zone dangereuse */}
-      <div className="bg-red-50 border border-alert/20 rounded-2xl p-5">
-        <h3 className="text-sm font-semibold text-alert mb-1 flex items-center gap-1.5">
-          <AlertTriangle size={14} /> Zone dangereuse
-        </h3>
-        <p className="text-xs text-muted mb-4">La suppression de votre compte est irréversible. Toutes vos données seront perdues.</p>
-        {!confirmDelete ? (
-          <button onClick={() => setConfirmDelete(true)} className="px-4 py-2 bg-white border border-alert/30 text-alert rounded-xl text-sm font-medium hover:bg-red-50 transition-colors">
-            Supprimer mon compte
-          </button>
-        ) : (
-          <div className="flex items-center gap-3">
-            <p className="text-sm text-alert font-medium">Confirmer la suppression ?</p>
-            <button onClick={handleDelete} className="px-4 py-2 bg-alert text-white rounded-xl text-sm font-medium hover:opacity-80 transition-opacity">
-              Oui, supprimer
-            </button>
-            <button onClick={() => setConfirmDelete(false)} className="px-4 py-2 bg-white border border-border text-muted rounded-xl text-sm hover:bg-slate-50 transition-colors">
-              Annuler
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-// ──────────────────────────────────────────────
-// Section admin — gestion des utilisateurs
-// ──────────────────────────────────────────────
-const ROLES: Role[] = ["admin", "formatrice", "coordinatrice", "benevole"]
-
-function AdminSection() {
-  const [users, setUsers] = useState<AuthUser[]>([])
-  const [slideOpen, setSlideOpen] = useState(false)
-  const [editingUser, setEditingUser] = useState<AuthUser | null>(null)
-  const [form, setForm] = useState({ prenom: "", nom: "", email: "", role: "benevole" as Role, password: "" })
-  const [confirmPwd, setConfirmPwd] = useState("")
-  const [error, setError] = useState("")
-
-  function loadUsers() { setUsers(getAllUsers()) }
-  useEffect(() => { loadUsers() }, [])
-
-  function openNew() {
-    setEditingUser(null)
-    setForm({ prenom: "", nom: "", email: "", role: "benevole", password: "" })
-    setConfirmPwd("")
-    setError("")
-    setSlideOpen(true)
-  }
-
-  function openEdit(u: AuthUser) {
-    setEditingUser(u)
-    setForm({ prenom: u.prenom, nom: u.nom, email: u.email, role: u.role, password: "" })
-    setConfirmPwd("")
-    setError("")
-    setSlideOpen(true)
-  }
-
-  function handleSave(e: React.FormEvent) {
-    e.preventDefault()
-    setError("")
-    if (!editingUser) {
-      // Créer
-      if (!form.password) { setError("Mot de passe requis."); return }
-      if (form.password !== confirmPwd) { setError("Les mots de passe ne correspondent pas."); return }
-      if (form.password.length < 6) { setError("Minimum 6 caractères."); return }
-      const res = register({ ...form })
-      if (!res.ok) { setError(res.error ?? "Erreur."); return }
-    } else {
-      // Modifier
-      const update: Parameters<typeof updateUser>[1] = {
-        prenom: form.prenom, nom: form.nom, email: form.email, role: form.role
-      }
-      if (form.password) {
-        if (form.password !== confirmPwd) { setError("Les mots de passe ne correspondent pas."); return }
-        if (form.password.length < 6) { setError("Minimum 6 caractères."); return }
-        update.password = form.password
-      }
-      const res = updateUser(editingUser.id, update)
-      if (!res.ok) { setError(res.error ?? "Erreur."); return }
-    }
-    loadUsers()
-    setSlideOpen(false)
-  }
-
-  function handleDelete() {
-    if (!editingUser) return
-    const res = deleteUser(editingUser.id)
-    if (!res.ok) { setError(res.error ?? "Erreur."); return }
-    loadUsers()
-    setSlideOpen(false)
-  }
-
-  const roleStyle: Record<Role, string> = {
-    super_admin:   "bg-slate-900 text-white",
-    admin:         "bg-red-100 text-red-700",
-    formatrice:    "bg-ateliers-light text-ateliers-dark",
-    coordinatrice: "bg-finances-light text-finances-dark",
-    benevole:      "bg-benevoles-light text-benevoles-dark",
-  }
-
-  return (
-    <div className="space-y-4">
-      <SlideOver
-        open={slideOpen}
-        onClose={() => setSlideOpen(false)}
-        title={editingUser ? `Modifier — ${editingUser.prenom} ${editingUser.nom}` : "Nouveau compte"}
-        width="md"
-      >
-        <form onSubmit={handleSave} className="flex flex-col gap-4">
-          {error && <p className="text-sm text-alert bg-red-50 border border-alert/20 px-3 py-2 rounded-lg">{error}</p>}
-          <FormRow>
-            <Field label="Prénom" required>
-              <Input value={form.prenom} onChange={e => setForm(f => ({ ...f, prenom: e.target.value }))} />
-            </Field>
-            <Field label="Nom" required>
-              <Input value={form.nom} onChange={e => setForm(f => ({ ...f, nom: e.target.value }))} />
-            </Field>
-          </FormRow>
-          <Field label="Email" required>
-            <Input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
-          </Field>
-          <Field label="Rôle">
-            <Select value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value as Role }))}>
-              {ROLES.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
-            </Select>
-          </Field>
-          <Field label={editingUser ? "Nouveau mot de passe (laisser vide pour ne pas changer)" : "Mot de passe"} required={!editingUser}>
-            <Input type="password" placeholder="6 caractères min." value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} />
-          </Field>
-          {(form.password || !editingUser) && (
-            <Field label="Confirmer le mot de passe" required={!editingUser}>
-              <Input type="password" placeholder="Identique" value={confirmPwd} onChange={e => setConfirmPwd(e.target.value)} />
-            </Field>
-          )}
-          <SaveButton />
-          {editingUser && <DeleteButton onClick={handleDelete} label="Supprimer ce compte" />}
-        </form>
-      </SlideOver>
-
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted">{users.length} compte{users.length > 1 ? "s" : ""}</p>
-        <button onClick={openNew} className="flex items-center gap-1.5 text-sm font-medium bg-slate-900 text-white px-4 py-2 rounded-xl hover:bg-slate-700 transition-colors">
-          <Plus size={14} /> Nouveau compte
-        </button>
-      </div>
-
-      <div className="bg-surface border border-border rounded-2xl overflow-hidden">
-        {users.map((u, i) => (
-          <div key={u.id} className={`flex items-center gap-3 px-5 py-3.5 group hover:bg-slate-50 transition-colors ${i > 0 ? "border-t border-border" : ""}`}>
-            <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center shrink-0">
-              <UserCircle size={16} className="text-slate-400" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-foreground">{u.prenom} {u.nom}</p>
-              <p className="text-xs text-muted truncate">{u.email}</p>
-            </div>
-            <span className={`text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ${roleStyle[u.role]}`}>
-              {ROLE_LABELS[u.role]}
-            </span>
-            <button
-              onClick={() => openEdit(u)}
-              className="p-1.5 rounded-lg hover:bg-slate-200 text-muted opacity-0 group-hover:opacity-100 transition-all"
-              title="Modifier"
-            >
-              <Pencil size={13} />
-            </button>
-          </div>
-        ))}
       </div>
     </div>
   )
@@ -289,8 +109,7 @@ function AdminSection() {
 // Page principale
 // ──────────────────────────────────────────────
 export default function ComptePage() {
-  const { user, refresh, logout } = useAuth()
-  const router = useRouter()
+  const { user, refresh } = useAuth()
 
   if (!user) return null
 
@@ -302,22 +121,7 @@ export default function ComptePage() {
       </header>
 
       <div className="space-y-10">
-        <ProfilSection
-          user={user}
-          onUpdated={refresh}
-          onDeleted={logout}
-        />
-
-        {(user.role === "admin" || user.role === "super_admin") && (
-          <section>
-            <div className="flex items-center gap-2 mb-5">
-              <ShieldCheck size={18} className="text-red-600" />
-              <h2 className="text-lg font-semibold text-foreground">Gestion des comptes</h2>
-              <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-medium">Admin</span>
-            </div>
-            <AdminSection />
-          </section>
-        )}
+        <ProfilSection user={user} onUpdated={refresh} />
       </div>
     </div>
   )

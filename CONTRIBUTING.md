@@ -8,7 +8,7 @@
 ## Les 3 branches à connaître
 
 ```
-main  ──────────────────────────────────────────▶  production (asso-inky.vercel.app)
+main  ──────────────────────────────────────────▶  production (asso-pilotage.vercel.app)
   ↑ merge uniquement via PR validée
 dev   ──────────────────────────────────────────▶  intégration (branche commune)
   ↑ merge uniquement via PR validée
@@ -93,7 +93,7 @@ Format : `feature/prenom-description-courte`
 feature/marie-page-beneficiaires
 feature/camille-correction-formulaire
 feature/fatoumata-filtre-ateliers
-feature/sarah-integration-zapier
+feature/sarah-export-csv
 
 # Pas bien ❌
 test

@@ -36,6 +36,26 @@ export function getDriveClient() {
   return google.drive({ version: "v3", auth })
 }
 
+export const POSITIONNEMENT_FOLDER_ID = "1VkfMr7hECZqKeSZhM7eIAbzCQ745yUUZ"
+
+// Dossier Drive "Communication - Médias" pour les images/vidéos des posts (module CONTENUS)
+export const COMMUNICATION_MEDIA_FOLDER_ID = "1yIGzxLSsdKmdc9N8Zdhkdiz10xdZdKY0"
+
+// Dossier Drive "Bilan atelier" — exports CSV du récapitulatif quantitatif des ateliers
+// (un nouveau fichier horodaté à chaque export, jamais d'écrasement).
+export const BILAN_ATELIER_FOLDER_ID = "1n7eliL5djCRdd65YAHnZm6DACsb-zWGJ"
+
+/** Rend un fichier Drive accessible publiquement (lecture) et retourne son URL de téléchargement direct. */
+export async function makeFilePublic(fileId: string): Promise<string> {
+  const drive = getDriveClient()
+  await drive.permissions.create({
+    fileId,
+    requestBody: { role: "reader", type: "anyone" },
+    supportsAllDrives: true,
+  })
+  return `https://drive.google.com/uc?export=download&id=${fileId}`
+}
+
 /** Supprime un fichier Drive (best-effort : peut échouer si le compte de service n'en est pas propriétaire). */
 export async function deleteDriveFile(fileId: string): Promise<void> {
   const drive = getDriveClient()
@@ -138,14 +158,36 @@ export async function ensureColumn(
   sheetName: string,
   columnName: string
 ): Promise<void> {
+  return ensureColumns(sheets, sheetName, [columnName])
+}
+
+/** Ajoute plusieurs colonnes (en-têtes) manquantes en un seul appel (1 lecture + au plus 1 écriture). */
+export async function ensureColumns(
+  sheets: Sheets,
+  sheetName: string,
+  columnNames: string[]
+): Promise<void> {
   const headers = await getHeaders(sheets, sheetName)
-  if (headers.includes(columnName)) return
+  const missing = columnNames.filter((c) => !headers.includes(c))
+  if (!missing.length) return
   await sheets.spreadsheets.values.update({
     spreadsheetId: SPREADSHEET_ID,
     range: `${sheetName}!${colLetter(headers.length + 1)}1`,
     valueInputOption: "RAW",
-    requestBody: { values: [[columnName]] },
+    requestBody: { values: [missing] },
   })
+}
+
+/** Sérialise une valeur pour une écriture USER_ENTERED : Sheets interprète normalement
+ *  une chaîne comme un nombre ("150" → 150), ce qui est voulu pour les montants. Mais
+ *  ça fait sauter les zéros initiaux d'un numéro de téléphone ("0612345678" → 612345678).
+ *  On force donc le texte (préfixe apostrophe, convention Sheets) uniquement pour les
+ *  chaînes qui commencent par un zéro suivi d'un chiffre — les montants ne matchent pas
+ *  ce motif, ils restent donc de vrais nombres dans la feuille. */
+function formatCellValue(value: unknown): string {
+  if (value === undefined || value === null) return ""
+  const str = String(value)
+  return /^0\d/.test(str) ? `'${str}` : str
 }
 
 export async function appendRow(
@@ -154,11 +196,16 @@ export async function appendRow(
   obj: Record<string, unknown>
 ): Promise<void> {
   const headers = await getHeaders(sheets, sheetName)
-  const row = headers.map((h) => (obj[h] !== undefined ? String(obj[h]) : ""))
+  const row = headers.map((h) => formatCellValue(obj[h]))
   await sheets.spreadsheets.values.append({
     spreadsheetId: SPREADSHEET_ID,
     range: sheetName,
     valueInputOption: "USER_ENTERED",
+    // Sans ce flag, le mode par défaut ("OVERWRITE") peut mal détecter la fin
+    // du tableau sur certaines feuilles et écraser la dernière ligne écrite
+    // au lieu d'en ajouter une nouvelle (observé sur ASSIDUITE : deux appends
+    // successifs ciblaient la même ligne).
+    insertDataOption: "INSERT_ROWS",
     requestBody: { values: [row] },
   })
 }
@@ -188,7 +235,7 @@ export async function updateRowById(
         spreadsheetId: SPREADSHEET_ID,
         range: rangeA1,
         valueInputOption: "USER_ENTERED",
-        requestBody: { values: [[val ?? ""]] },
+        requestBody: { values: [[formatCellValue(val)]] },
       })
     })
     .filter(Boolean)
@@ -281,6 +328,54 @@ export async function deleteRowsWhere(
       range: {
         sheetId: sheet.properties!.sheetId,
         dimension: "ROWS",
+        startIndex: rowIndex,
+        endIndex: rowIndex + 1,
+      },
+    },
+  }))
+
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: SPREADSHEET_ID,
+    requestBody: { requests },
+  })
+  return toDelete.length
+}
+
+/** Comme deleteRowsWhere, mais avec plusieurs conditions combinées en ET
+ *  (ex : Atelier ID = X ET Role = "Beneficiaire") — nécessaire quand une même
+ *  feuille mélange plusieurs types de lignes (ATELIER_PARTICIPANT). */
+export async function deleteRowsWhereAll(
+  sheets: Sheets,
+  sheetName: string,
+  filters: Record<string, string>
+): Promise<number> {
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: sheetName,
+  })
+  const rows = res.data.values ?? []
+  if (rows.length < 2) return 0
+  const headers = rows[0] as string[]
+  const cols = Object.entries(filters).map(([h, v]) => ({ index: headers.indexOf(h), value: v }))
+  if (cols.some((c) => c.index < 0)) return 0
+
+  const toDelete: number[] = []
+  rows.forEach((row, i) => {
+    if (i === 0) return
+    if (cols.every((c) => String(row[c.index] ?? "") === c.value)) toDelete.push(i)
+  })
+  if (!toDelete.length) return 0
+
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID })
+  const sheet = meta.data.sheets?.find((s) => s.properties?.title === sheetName)
+  if (!sheet?.properties?.sheetId) return 0
+
+  const sortedDesc = [...toDelete].sort((a, b) => b - a)
+  const requests = sortedDesc.map((rowIndex) => ({
+    deleteDimension: {
+      range: {
+        sheetId: sheet.properties!.sheetId,
+        dimension: "ROWS" as const,
         startIndex: rowIndex,
         endIndex: rowIndex + 1,
       },
