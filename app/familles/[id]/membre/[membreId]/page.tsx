@@ -137,19 +137,27 @@ export default function FicheMembrePage({ params }: { params: Promise<{ id: stri
 
   const loadData = useCallback(async () => {
     try {
-      const [familles, m, p, docs, scol] = await Promise.all([
+      const [familles, m, p, docs] = await Promise.all([
         fetchFamilles(),
         fetchMembre(membreId),
         fetchPaiements(membreId),
         fetchDocuments(membreId),
-        fetchScolariteFamille(id),
       ])
       setFamille(familles.find(f => f.ID_Famille === id) ?? null)
       setMembre(m)
       setForm(m)
       setPaiements(p)
       setDocuments(docs)
-      setScolarites(scol)
+
+      // Isolé du Promise.all principal : la scolarité est une info annexe, son
+      // indisponibilité (table Sheet manquante, etc.) ne doit pas empêcher
+      // l'affichage du reste de la fiche membre.
+      try {
+        setScolarites(await fetchScolariteFamille(id))
+      } catch (e) {
+        console.error(e)
+        setScolarites([])
+      }
 
       // Mise à jour automatique : inscriptions EN COURS dont l'année est échue → Terminé
       const fetchedInscriptions = m.inscriptions ?? []
