@@ -125,12 +125,17 @@ export default function FicheFamillePage({ params }: { params: Promise<{ id: str
       const res = await fetch("/api/ocr", { method: "POST", body: formData })
       if (!res.ok) { console.error("[ocr] échec de l'analyse, statut", res.status); return }
       const data = await res.json()
+      const montantTotal = typeof data.montant_total === "number" ? data.montant_total : 0
+      const montantInscription = montantTotal >= 30 ? 30 : 0
+      const montantAdhesion    = montantTotal >= 30 ? montantTotal - 30 : montantTotal
       setMembreForm(f => ({
         ...f,
-        Nom:            String(data.nom     ?? f.Nom     ?? ""),
-        Prenom:         String(data.prenom  ?? f.Prenom  ?? ""),
-        Telephone:      normaliserTelephone(data.telephones?.[0]) || f.Telephone || "",
-        Date_Naissance: parseDateOcr(data.date_naissance) || (f.Date_Naissance ?? ""),
+        Nom:                 String(data.nom    ?? f.Nom    ?? ""),
+        Prenom:              String(data.prenom ?? f.Prenom ?? ""),
+        Telephone:           normaliserTelephone(data.telephones?.[0]) || f.Telephone || "",
+        Date_Naissance:      parseDateOcr(data.date_naissance) || (f.Date_Naissance ?? ""),
+        Montant_Inscription: montantTotal > 0 ? String(montantInscription) : (f.Montant_Inscription ?? ""),
+        Montant_Adhesion:    montantTotal > 0 ? String(montantAdhesion)    : (f.Montant_Adhesion   ?? ""),
       }))
       setOcrDone(true)
     } catch { console.error("[ocr] échec de l'analyse") }
@@ -330,6 +335,56 @@ export default function FicheFamillePage({ params }: { params: Promise<{ id: str
       {/* SlideOver — ajouter membre */}
       <SlideOver open={slideOpen && slideMode === "add"} onClose={() => setSlideOpen(false)} title="Ajouter un membre" width="md">
         <form onSubmit={e => { e.preventDefault(); handleAddMembre() }} className="flex flex-col gap-4">
+
+          {/* ── Bénéficiaire + OCR (en haut) ── */}
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <span className="text-sm font-medium text-foreground">Bénéficiaire</span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={membreForm.Beneficiaire === "Oui"}
+                onClick={() => setMembreForm(f => ({ ...f, Beneficiaire: f.Beneficiaire === "Oui" ? "Non" : "Oui" }))}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none ${membreForm.Beneficiaire === "Oui" ? "bg-familles" : "bg-slate-200"}`}
+              >
+                <span className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition-transform ${membreForm.Beneficiaire === "Oui" ? "translate-x-5" : "translate-x-0"}`} />
+              </button>
+              <span className="text-sm text-muted">{membreForm.Beneficiaire === "Oui" ? "Oui" : "Non"}</span>
+            </div>
+
+            {membreForm.Beneficiaire === "Oui" && (
+              <div className="flex items-center gap-2">
+                <label className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-border bg-surface text-sm text-muted cursor-pointer hover:border-familles transition-colors">
+                  <Upload size={14} />
+                  Choisir un fichier
+                  <input
+                    type="file"
+                    accept=".pdf,application/pdf"
+                    className="hidden"
+                    onChange={e => {
+                      const file = e.target.files?.[0] ?? null
+                      setMembreFichier(file)
+                      setOcrDone(false)
+                      if (file) handleOcr(file)
+                    }}
+                  />
+                </label>
+                {ocrLoading && (
+                  <span className="flex items-center gap-1 text-xs text-muted">
+                    <RotateCcw size={11} className="animate-spin" />
+                    Analyse…
+                  </span>
+                )}
+                {!ocrLoading && ocrDone && (
+                  <span className="text-xs text-familles-dark">Pré-rempli ✓</span>
+                )}
+                {!ocrLoading && !ocrDone && membreFichier && (
+                  <span className="text-xs text-muted truncate max-w-[120px]">{membreFichier.name}</span>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* ── Infos personne ── */}
           <Field label="Catégorie" required>
             <Select value={String(membreForm.Role ?? "Adulte")} onChange={e => setMembreForm(f => ({ ...f, Role: e.target.value }))}>
@@ -376,12 +431,6 @@ export default function FicheFamillePage({ params }: { params: Promise<{ id: str
           </FormRow>
 
           {/* ── Bénéficiaire → inscription ── */}
-          <Field label="Bénéficiaire" required>
-            <Select value={String(membreForm.Beneficiaire ?? "Non")} onChange={e => setMembreForm(f => ({ ...f, Beneficiaire: e.target.value }))}>
-              <option value="Non">Non</option>
-              <option value="Oui">Oui</option>
-            </Select>
-          </Field>
 
           {membreForm.Beneficiaire === "Oui" && (
             <div className="flex flex-col gap-4 border-l-2 border-familles/30 pl-4">
@@ -425,35 +474,6 @@ export default function FicheFamillePage({ params }: { params: Promise<{ id: str
               </p>
             </div>
           )}
-          <Field label="Bulletin d'inscription (PDF)">
-            <label className="flex items-center gap-2 px-3 py-2.5 rounded-xl border border-border bg-surface text-sm text-muted cursor-pointer hover:border-familles transition-colors w-fit">
-              <Upload size={15} />
-              Choisir un fichier
-              <input
-                type="file"
-                accept=".pdf,application/pdf"
-                className="hidden"
-                onChange={e => {
-                  const file = e.target.files?.[0] ?? null
-                  setMembreFichier(file)
-                  setOcrDone(false)
-                  if (file) handleOcr(file)
-                }}
-              />
-            </label>
-            {ocrLoading && (
-              <p className="flex items-center gap-1.5 text-xs text-muted mt-1.5">
-                <RotateCcw size={12} className="animate-spin" />
-                Analyse du bulletin en cours…
-              </p>
-            )}
-            {!ocrLoading && ocrDone && (
-              <p className="text-xs text-finances-dark mt-1.5">Champs pré-remplis ✓</p>
-            )}
-            {!ocrLoading && !ocrDone && membreFichier && (
-              <p className="text-xs text-muted mt-1.5">{membreFichier.name}</p>
-            )}
-          </Field>
           <SaveButton accent="familles" label={saving ? "Enregistrement…" : "Enregistrer"} />
         </form>
       </SlideOver>
