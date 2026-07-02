@@ -411,13 +411,6 @@ export default function FicheMembrePage({ params }: { params: Promise<{ id: stri
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <button
-            onClick={openDocument}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-familles text-white text-sm font-medium hover:bg-familles-dark transition-colors"
-          >
-            <Upload size={15} />
-            Ajouter un document
-          </button>
-          <button
             onClick={() => { setForm({ ...membre }); setSlideOpen(true) }}
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-familles-light text-familles-dark text-sm font-medium hover:bg-familles hover:text-white transition-colors"
           >
@@ -500,7 +493,13 @@ export default function FicheMembrePage({ params }: { params: Promise<{ id: stri
 
       {/* Documents : un type par ligne, dépliable pour voir les fichiers joints */}
       <div className="bg-surface border border-border rounded-xl p-5 mb-6">
-        <h2 className="text-sm font-semibold text-foreground mb-3">Documents</h2>
+        <div className="flex items-center justify-between mb-3 gap-2">
+          <h2 className="text-sm font-semibold text-foreground">Documents</h2>
+          <button onClick={openDocument}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-familles text-white text-xs font-medium hover:bg-familles-dark transition-colors">
+            <Upload size={13} /> Ajouter un document
+          </button>
+        </div>
 
         <ul className="divide-y divide-border">
           {piecesStatut.map(({ cat, present }) => {
