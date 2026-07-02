@@ -10,8 +10,9 @@ import DateInput from "@/components/DateInput"
 import { ChevronRight, Pencil, Plus, Upload, RotateCcw } from "lucide-react"
 import {
   fetchFamilles, fetchMembres, updateFamille, addMembre, deleteMembre, uploadFichier,
+  fetchEtablissements, fetchProfesseurs, addEtablissement, addProfesseur, addScolarite,
   getCurrentAnneeScolaire, getAnneeScolaireOptions,
-  type FamilleSheet, type MembreSheet
+  type FamilleSheet, type MembreSheet, type EtablissementItem, type ProfesseurItem,
 } from "@/lib/sheets-api"
 
 function parseDateOcr(s?: string): string {
@@ -84,6 +85,16 @@ export default function FicheFamillePage({ params }: { params: Promise<{ id: str
   const [ocrDone, setOcrDone]             = useState(false)
   const [saving, setSaving]               = useState(false)
 
+  // États scolarité
+  const [etablissements, setEtablissements] = useState<EtablissementItem[]>([])
+  const [professeurs, setProfesseurs]       = useState<ProfesseurItem[]>([])
+  const [selectedEtabId, setSelectedEtabId] = useState("")
+  const [selectedProfId, setSelectedProfId] = useState("")
+  const [addEtabMode, setAddEtabMode]       = useState(false)
+  const [addProfMode, setAddProfMode]       = useState(false)
+  const [newEtabForm, setNewEtabForm]       = useState({ Type: "", Nom: "" })
+  const [newProfForm, setNewProfForm]       = useState({ Nom: "", Telephone: "", Email: "" })
+
   const loadData = useCallback(async () => {
     try {
       const [f, m] = await Promise.all([fetchFamilles(), fetchMembres(id)])
@@ -94,6 +105,11 @@ export default function FicheFamillePage({ params }: { params: Promise<{ id: str
   }, [id])
 
   useEffect(() => { loadData() }, [loadData])
+
+  useEffect(() => {
+    if (!selectedEtabId) { setProfesseurs([]); setSelectedProfId(""); return }
+    fetchProfesseurs(selectedEtabId).then(setProfesseurs)
+  }, [selectedEtabId])
 
   const famille = familles.find(f => f.ID_Famille === id)
 
@@ -142,6 +158,24 @@ export default function FicheFamillePage({ params }: { params: Promise<{ id: str
     finally { setOcrLoading(false) }
   }
 
+  async function handleAddEtablissement() {
+    const result = await addEtablissement(newEtabForm)
+    const etabs = await fetchEtablissements()
+    setEtablissements(etabs)
+    setSelectedEtabId(result.ID)
+    setNewEtabForm({ Type: "", Nom: "" })
+    setAddEtabMode(false)
+  }
+
+  async function handleAddProfesseur() {
+    const result = await addProfesseur({ ...newProfForm, Etablissement_ID: selectedEtabId })
+    const profs = await fetchProfesseurs(selectedEtabId)
+    setProfesseurs(profs)
+    setSelectedProfId(result.ID)
+    setNewProfForm({ Nom: "", Telephone: "", Email: "" })
+    setAddProfMode(false)
+  }
+
   async function handleAddMembre() {
     if (saving) return
     setSaving(true)
@@ -159,11 +193,19 @@ export default function FicheFamillePage({ params }: { params: Promise<{ id: str
           })
         } catch { console.error("[upload doc] échec de l'upload") }
       }
+      if (selectedEtabId || selectedProfId) {
+        try { await addScolarite(result.ID_Membre, selectedEtabId, selectedProfId) }
+        catch { console.error("[scolarite] échec de l'enregistrement") }
+      }
     }
     await loadData()
     setMembreForm(emptyMembre(id))
     setMembreFichier(null)
     setOcrDone(false)
+    setSelectedEtabId("")
+    setSelectedProfId("")
+    setAddEtabMode(false)
+    setAddProfMode(false)
     setSaving(false)
     setSlideOpen(false)
   }
@@ -251,7 +293,13 @@ export default function FicheFamillePage({ params }: { params: Promise<{ id: str
           <span className="ml-2 text-xs font-normal text-muted">({membres.length})</span>
         </h2>
         <button
-          onClick={() => { setMembreForm(emptyMembre(id)); setMembreFichier(null); setOcrDone(false); setSlideMode("add"); setSlideOpen(true) }}
+          onClick={async () => {
+            setMembreForm(emptyMembre(id)); setMembreFichier(null); setOcrDone(false)
+            setSelectedEtabId(""); setSelectedProfId(""); setAddEtabMode(false); setAddProfMode(false)
+            setSlideMode("add"); setSlideOpen(true)
+            const etabs = await fetchEtablissements()
+            setEtablissements(etabs)
+          }}
           className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-familles text-white text-sm font-medium hover:bg-familles-dark transition-colors"
         >
           <Plus size={14} />
@@ -449,6 +497,80 @@ export default function FicheFamillePage({ params }: { params: Promise<{ id: str
                 <Field label="Niveau scolaire">
                   <Input value={String(membreForm.Niveau ?? "")} onChange={e => setMembreForm(f => ({ ...f, Niveau: e.target.value }))} placeholder="ex. CE2, 5ᵉ…" />
                 </Field>
+              )}
+
+              {/* ── Scolarité (enfants bénéficiaires uniquement) ── */}
+              {membreForm.Role === "Enfant" && (
+                <div className="flex flex-col gap-3 border-t border-border pt-3">
+                  <p className="text-xs font-semibold text-familles-dark uppercase tracking-wide">Scolarité</p>
+
+                  {/* Établissement */}
+                  <Field label="Établissement">
+                    <div className="flex gap-2">
+                      <Select value={selectedEtabId} onChange={e => { setSelectedEtabId(e.target.value); setAddEtabMode(false) }}>
+                        <option value="">— Choisir —</option>
+                        {etablissements.map(e => <option key={e.ID} value={e.ID}>{e.Type ? `${e.Type} · ` : ""}{e.Nom}</option>)}
+                      </Select>
+                      <button type="button" onClick={() => setAddEtabMode(v => !v)}
+                        className="px-2.5 rounded-lg border border-border text-muted hover:border-familles hover:text-familles-dark transition-colors text-sm">+</button>
+                    </div>
+                  </Field>
+
+                  {addEtabMode && (
+                    <div className="flex flex-col gap-2 p-3 rounded-xl bg-slate-50 border border-border">
+                      <p className="text-xs font-medium text-muted">Nouvel établissement</p>
+                      <FormRow>
+                        <Field label="Type">
+                          <Input value={newEtabForm.Type} onChange={e => setNewEtabForm(f => ({ ...f, Type: e.target.value }))} placeholder="Collège, École…" />
+                        </Field>
+                        <Field label="Nom" required>
+                          <Input value={newEtabForm.Nom} onChange={e => setNewEtabForm(f => ({ ...f, Nom: e.target.value }))} />
+                        </Field>
+                      </FormRow>
+                      <div className="flex gap-2">
+                        <button type="button" onClick={handleAddEtablissement}
+                          className="px-3 py-1.5 rounded-lg bg-familles text-white text-xs font-medium hover:bg-familles-dark transition-colors">Enregistrer</button>
+                        <button type="button" onClick={() => setAddEtabMode(false)}
+                          className="px-3 py-1.5 rounded-lg border border-border text-xs text-muted hover:border-familles transition-colors">Annuler</button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Professeur principal */}
+                  <Field label="Professeur principal">
+                    <div className="flex gap-2">
+                      <Select value={selectedProfId} onChange={e => { setSelectedProfId(e.target.value); setAddProfMode(false) }} disabled={!selectedEtabId}>
+                        <option value="">— Choisir —</option>
+                        {professeurs.map(p => <option key={p.ID} value={p.ID}>{p.Nom}</option>)}
+                      </Select>
+                      <button type="button" onClick={() => setAddProfMode(v => !v)} disabled={!selectedEtabId}
+                        className="px-2.5 rounded-lg border border-border text-muted hover:border-familles hover:text-familles-dark transition-colors text-sm disabled:opacity-40">+</button>
+                    </div>
+                  </Field>
+
+                  {addProfMode && (
+                    <div className="flex flex-col gap-2 p-3 rounded-xl bg-slate-50 border border-border">
+                      <p className="text-xs font-medium text-muted">Nouveau professeur</p>
+                      <Field label="Nom" required>
+                        <Input value={newProfForm.Nom} onChange={e => setNewProfForm(f => ({ ...f, Nom: e.target.value }))} />
+                      </Field>
+                      <FormRow>
+                        <Field label="Téléphone">
+                          <Input value={newProfForm.Telephone} onChange={e => setNewProfForm(f => ({ ...f, Telephone: e.target.value }))} />
+                        </Field>
+                        <Field label="Email">
+                          <Input type="email" value={newProfForm.Email} onChange={e => setNewProfForm(f => ({ ...f, Email: e.target.value }))} />
+                        </Field>
+                      </FormRow>
+                      <div className="flex gap-2">
+                        <button type="button" onClick={handleAddProfesseur}
+                          className="px-3 py-1.5 rounded-lg bg-familles text-white text-xs font-medium hover:bg-familles-dark transition-colors">Enregistrer</button>
+                        <button type="button" onClick={() => setAddProfMode(false)}
+                          className="px-3 py-1.5 rounded-lg border border-border text-xs text-muted hover:border-familles transition-colors">Annuler</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
               <FormRow>
                 <Field label="Disponibilité">
