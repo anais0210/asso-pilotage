@@ -307,7 +307,7 @@ async function getPaiements(sheets: Sheets, idMembre: string) {
 }
 
 async function getEvenements(sheets: Sheets, categorie?: string) {
-  const rows = await sheetToObjects(sheets, "EVENEMENT")
+  const rows = await sheetToObjects(sheets, "EVENEMENT2")
   return rows
     .filter((r) => !categorie || String(r["Categorie"]).toLowerCase() === categorie.toLowerCase())
     .map((r) => ({
@@ -803,8 +803,8 @@ async function updateInscription(sheets: Sheets, idInscription: string, data: Re
 // ── ÉCRITURE ÉVÉNEMENT ────────────────────────────────────
 
 async function addEvenement(sheets: Sheets, data: Record<string, unknown>) {
-  const id = await nextId(sheets, "EVENEMENT")
-  await appendRow(sheets, "EVENEMENT", {
+  const id = await nextId(sheets, "EVENEMENT2")
+  await appendRow(sheets, "EVENEMENT2", {
     "ID": id,
     "Titre": data.Titre ?? "",
     "Date": data.Date ? parseDateFr(String(data.Date)) : "",
@@ -828,12 +828,12 @@ async function updateEvenement(sheets: Sheets, idEvenement: string, data: Record
   if (data.Animateur !== undefined)  map["Animateur"] = data.Animateur
   if (data.Categorie !== undefined)  map["Categorie"] = data.Categorie
   if (data.Statut !== undefined)     map["Statut"] = data.Statut
-  const ok = await updateRowById(sheets, "EVENEMENT", idEvenement, map)
+  const ok = await updateRowById(sheets, "EVENEMENT2", idEvenement, map)
   return ok ? { ok: true } : { error: "Événement introuvable" }
 }
 
 async function deleteEvenement(sheets: Sheets, idEvenement: string) {
-  const ok = await deleteRowById(sheets, "EVENEMENT", idEvenement)
+  const ok = await deleteRowById(sheets, "EVENEMENT2", idEvenement)
   return ok ? { ok: true } : { error: "Événement introuvable" }
 }
 
