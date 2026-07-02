@@ -341,6 +341,12 @@ export default function FicheMembrePage({ params }: { params: Promise<{ id: stri
   const statut = membre.Statut_Inscription?.toString().toUpperCase() ?? ""
   const age = ageDepuis(membre.Date_Naissance)
 
+  // Scolarité : la sienne (enfant) et celle des enfants de la famille (parent)
+  const estEnfant = membre.Role === "Enfant"
+  const maScolarite = scolarites.find(s => s.ID_Membre === membreId) ?? null
+  const scolariteEnfants = scolarites.filter(s => s.ID_Membre !== membreId)
+  const etabLabel = (e: ScolariteEntry["Etablissement"]) => e ? e.Nom : ""
+
   // Champs de la carte infos (ordre logique ; seuls les renseignés s'affichent)
   const naissance = dateFrLisible(membre.Date_Naissance)
   const champsInfos: { label: string; value: string }[] = [
@@ -351,17 +357,12 @@ export default function FicheMembrePage({ params }: { params: Promise<{ id: stri
     { label: "Genre", value: String(membre.Genre || "") },
     { label: "Pays d'origine", value: String(membre.Pays_Origine || "") },
     { label: "Langue maternelle", value: String(membre.Langue_Maternelle || "") },
+    { label: "Établissement scolaire", value: estEnfant && maScolarite?.Etablissement ? maScolarite.Etablissement.Nom : "" },
     { label: "Nb. enfants accompagnants", value: membre.Nb_Enfants ? String(membre.Nb_Enfants) : "" },
     { label: "Adresse", value: String(famille?.Adresse_Complete || famille?.Adresse || "") },
     { label: "Contact principal", value: membre.Contact_Principal ? String(membre.Contact_Principal) : "" },
     { label: "Source d'orientation", value: String(membre.Source_Orientation || "") },
   ].filter(c => c.value !== "")
-
-  // Scolarité : la sienne (enfant) et celle des enfants de la famille (parent)
-  const estEnfant = membre.Role === "Enfant"
-  const maScolarite = scolarites.find(s => s.ID_Membre === membreId) ?? null
-  const scolariteEnfants = scolarites.filter(s => s.ID_Membre !== membreId)
-  const etabLabel = (e: ScolariteEntry["Etablissement"]) => e ? e.Nom : ""
 
   const champsScolarite: { label: string; value: string }[] = maScolarite ? [
     { label: "Établissement", value: etabLabel(maScolarite.Etablissement) },
