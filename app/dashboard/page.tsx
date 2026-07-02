@@ -1,14 +1,22 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import StatCard from "@/components/StatCard"
-import { Euro, BookOpen, Megaphone, UserCog } from "lucide-react"
+import { Euro, BookOpen, Megaphone, UserCog, List } from "lucide-react"
 import { finances, ateliers, communication, membres } from "@/lib/mock-data"
+import { type Brouillon, BROUILLONS_MOCK, HISTORIQUE_MOCK, STORAGE_BROUILLONS, load } from "@/lib/rapports-data"
 
 function todayFr() {
   return new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" })
 }
 
 export default function DashboardPage() {
+  const [brouillonsRapports, setBrouillonsRapports] = useState<Brouillon[]>(BROUILLONS_MOCK)
+
+  useEffect(() => {
+    setBrouillonsRapports(load(STORAGE_BROUILLONS, BROUILLONS_MOCK))
+  }, [])
+
   const ateliersSallesNonConfirmees = ateliers.sessions.filter(
     (s) => s.salle === "À confirmer" && s.statut !== "terminé"
   ).length
@@ -95,6 +103,20 @@ export default function DashboardPage() {
             { label: "Membres actifs", value: membres.liste.filter((m) => m.statut === "active").length },
             { label: "Bénévoles", value: membres.liste.filter((m) => m.role === "benevole").length },
             { label: "Candidatures en attente", value: membresEnAttente, highlight: membresEnAttente > 0 },
+          ]}
+        />
+
+        <StatCard
+          title="Rapports"
+          icon={List}
+          accentClass="bg-rapports-light"
+          iconClass="text-rapports-dark"
+          borderClass="border-rapports"
+          href="/rapports"
+          cta="Gérer les rapports"
+          stats={[
+            { label: "Brouillons en cours", value: brouillonsRapports.length },
+            { label: "Rapports archivés", value: HISTORIQUE_MOCK.length },
           ]}
         />
       </div>
