@@ -483,9 +483,11 @@ async function getAssiduite(sheets: Sheets, idEvenement?: string, idPersonne?: s
 // ── LECTURE ATELIERS ──────────────────────────────────────
 
 async function getAteliers(sheets: Sheets, audience?: string) {
-  const [evenements, participants] = await Promise.all([
+  await ensureSheet(sheets, "SEANCE", SEANCE_HEADERS)
+  const [evenements, participants, seances] = await Promise.all([
     sheetToObjects(sheets, "EVENEMENT2"),
     sheetToObjects(sheets, "ATELIER_PARTICIPANT"),
+    sheetToObjects(sheets, "SEANCE"),
   ])
   // La table EVENEMENT2 est partagée avec d'autres types d'événements
   // (cours, sortie…) — ce module ne gère que les lignes Type = "atelier".
@@ -494,7 +496,16 @@ async function getAteliers(sheets: Sheets, audience?: string) {
     .filter((a) => !audience || String(a["Audience"]).toLowerCase() === audience.toLowerCase())
     .map((a) => {
       const id = String(a["ID"])
-      const liens = participants.filter((l) => String(l["Atelier ID"]) === id)
+      // "Atelier ID" d'une séance peut lister plusieurs ateliers (valeurs séparées
+      // par des virgules) — une séance n'est donc pas forcément liée à un seul atelier.
+      const idsSeances = new Set(
+        seances
+          .filter((s) => String(s["Atelier ID"] ?? "").split(",").map((v) => v.trim()).includes(id))
+          .map((s) => String(s["ID"]))
+      )
+      const liens = participants.filter((l) =>
+        String(l["Atelier ID"]) === id || idsSeances.has(String(l["Seance ID"] ?? ""))
+      )
       const beneficiaireIds = Array.from(new Set(
         liens
           .filter((l) => l["Role"] === "Beneficiaire")
@@ -1030,12 +1041,15 @@ async function upsertAssiduite(
   await ensureColumn(sheets, "ASSIDUITE", "Seance ID")
   const rows = await sheetToObjects(sheets, "ASSIDUITE")
   // Avec idSeance : une ligne par (séance, personne). Sans idSeance (ancien
-  // comportement, émargement au niveau atelier entier) : une ligne par (atelier, personne).
+  // comportement, émargement au niveau atelier entier) : une ligne par (atelier, personne),
+  // en excluant explicitement les lignes déjà rattachées à une séance précise —
+  // sinon un émargement "toutes les séances" retrouve et écrase par erreur la
+  // ligne d'une séance spécifique (même Evenement2 ID que l'atelier parent).
   const existing = rows.find((r) =>
     String(r["Personne ID"]) === String(idPersonne) &&
     (idSeance
       ? String(r["Seance ID"] ?? "") === String(idSeance)
-      : String(r["Evenement2 ID"]) === String(idEvenement))
+      : String(r["Evenement2 ID"]) === String(idEvenement) && !String(r["Seance ID"] ?? ""))
   )
 
   if (existing) {
@@ -1151,15 +1165,26 @@ async function updateAtelier(
 async function deleteAtelier(sheets: Sheets, idAtelier: string) {
   // Cascade : séances rattachées (+ leurs propres liens intervenants/émargement),
   // puis liens bénéficiaires/intervenants + émargement au niveau de l'atelier entier.
+  // Une séance peut être rattachée à plusieurs ateliers ("Atelier ID" séparés par
+  // virgule) : on ne la supprime (avec ses liens) que si cet atelier était le
+  // dernier auquel elle était rattachée ; sinon on retire juste sa référence.
   await ensureSheet(sheets, "SEANCE", SEANCE_HEADERS)
   const seances = await sheetToObjects(sheets, "SEANCE")
-  const idsSeances = seances
-    .filter((s) => String(s["Atelier ID"]) === String(idAtelier))
-    .map((s) => String(s["ID"]))
-  if (idsSeances.length) {
-    await deleteRowsWhere(sheets, "ATELIER_PARTICIPANT", "Seance ID", idsSeances)
-    await deleteRowsWhere(sheets, "ASSIDUITE", "Seance ID", idsSeances)
-    await deleteRowsWhere(sheets, "SEANCE", "Atelier ID", [String(idAtelier)])
+  const idsSeancesADetacher: string[] = []
+  for (const s of seances) {
+    const ids = String(s["Atelier ID"] ?? "").split(",").map((v) => v.trim()).filter(Boolean)
+    if (!ids.includes(idAtelier)) continue
+    const restants = ids.filter((v) => v !== idAtelier)
+    if (restants.length) {
+      await updateRowById(sheets, "SEANCE", String(s["ID"]), { "Atelier ID": restants.join(",") })
+    } else {
+      idsSeancesADetacher.push(String(s["ID"]))
+    }
+  }
+  if (idsSeancesADetacher.length) {
+    await deleteRowsWhere(sheets, "ATELIER_PARTICIPANT", "Seance ID", idsSeancesADetacher)
+    await deleteRowsWhere(sheets, "ASSIDUITE", "Seance ID", idsSeancesADetacher)
+    await deleteRowsWhere(sheets, "SEANCE", "ID", idsSeancesADetacher)
   }
   await deleteRowsWhere(sheets, "ATELIER_PARTICIPANT", "Atelier ID", [String(idAtelier)])
   await deleteRowsWhere(sheets, "ASSIDUITE", "Evenement2 ID", [String(idAtelier)])
@@ -1197,7 +1222,10 @@ async function getSeances(sheets: Sheets, idAtelier?: string) {
     sheetToObjects(sheets, "ATELIER_PARTICIPANT"),
   ])
   return seances
-    .filter((s) => !idAtelier || String(s["Atelier ID"]) === String(idAtelier))
+    .filter((s) =>
+      !idAtelier ||
+      String(s["Atelier ID"] ?? "").split(",").map((v) => v.trim()).includes(String(idAtelier))
+    )
     .map((s) => {
       const id = String(s["ID"])
       const intervenants = participants
