@@ -521,7 +521,12 @@ export default function FicheFamillePage({ params }: { params: Promise<{ id: str
                       <p className="text-xs font-medium text-muted">Nouvel établissement</p>
                       <FormRow>
                         <Field label="Type">
-                          <Input value={newEtabForm.Type} onChange={e => setNewEtabForm(f => ({ ...f, Type: e.target.value }))} placeholder="Collège, École…" />
+                          <Select value={newEtabForm.Type} onChange={e => setNewEtabForm(f => ({ ...f, Type: e.target.value }))}>
+                            <option value="">— Choisir —</option>
+                            <option value="École">École</option>
+                            <option value="Collège">Collège</option>
+                            <option value="Lycée">Lycée</option>
+                          </Select>
                         </Field>
                         <Field label="Nom" required>
                           <Input value={newEtabForm.Nom} onChange={e => setNewEtabForm(f => ({ ...f, Nom: e.target.value }))} />
