@@ -11,6 +11,7 @@ export type Entree = {
   date: string
   heure: string
   texte: string
+  epingle?: boolean
 }
 
 const SENS_VALIDES: Sens[] = ["entrant", "sortant", "recu", "envoye"]
@@ -28,6 +29,7 @@ export function parseEntrees(raw?: string | null): Entree[] {
           date: String(c.date ?? ""),
           heure: String(c.heure ?? ""),
           texte: String(c.texte),
+          epingle: c.epingle === true,
         }))
     }
   } catch {
@@ -118,7 +120,13 @@ export default function JournalSuivi({
     await persist(liste)
   }
 
-  // ── Préparation de l'affichage : filtre → tri récent → repli → groupes par date ──
+  async function handleTogglePin(index: number) {
+    const liste = parseEntrees(notes)
+    liste[index] = { ...liste[index], epingle: !liste[index].epingle }
+    await persist(liste)
+  }
+
+  // ── Préparation de l'affichage : filtre → épinglées en tête → tri récent → repli → groupes ──
   const counts = {
     commentaire: entrees.filter(e => e.type === "commentaire").length,
     appel: entrees.filter(e => e.type === "appel").length,
@@ -129,16 +137,27 @@ export default function JournalSuivi({
 
   const avecIndex = entrees.map((c, idx) => ({ c, idx }))
   const filtres = filtre === "tout" ? avecIndex : avecIndex.filter(x => x.c.type === filtre)
-  const ordonnes = [...filtres].reverse()                              // plus récent d'abord
+
+  // Épinglées en tête (ordre d'ajout), puis reste trié du plus récent au plus ancien
+  const epinglees = filtres.filter(x => x.c.epingle)
+  const nonEpinglees = [...filtres.filter(x => !x.c.epingle)].reverse()
+  const ordonnes = [...epinglees, ...nonEpinglees]
+
   const total = ordonnes.length
   const visibles = toutAfficher ? ordonnes : ordonnes.slice(0, LIMITE_REPLI)
 
-  // regroupement par date en conservant l'ordre
-  const groupes: { label: string; items: typeof visibles }[] = []
-  for (const it of visibles) {
+  // Les épinglées forment toujours leur propre groupe en tête
+  const groupes: { label: string; items: typeof visibles; estEpingle?: boolean }[] = []
+  const epinglesVisibles = visibles.filter(x => x.c.epingle)
+  const normalesVisibles = visibles.filter(x => !x.c.epingle)
+
+  if (epinglesVisibles.length > 0) {
+    groupes.push({ label: "Épinglées", items: epinglesVisibles, estEpingle: true })
+  }
+  for (const it of normalesVisibles) {
     const label = labelDate(it.c.date)
     const dernier = groupes[groupes.length - 1]
-    if (dernier && dernier.label === label) dernier.items.push(it)
+    if (dernier && !dernier.estEpingle && dernier.label === label) dernier.items.push(it)
     else groupes.push({ label, items: [it] })
   }
 
@@ -271,10 +290,15 @@ export default function JournalSuivi({
           <div className="space-y-4">
             {groupes.map(g => (
               <div key={g.label}>
-                <p className="text-xs font-semibold text-muted uppercase tracking-wide mb-2">{g.label}</p>
+                <p className={`text-xs font-semibold uppercase tracking-wide mb-2 flex items-center gap-1 ${
+                  g.estEpingle ? "text-absences-dark" : "text-muted"}`}>
+                  {g.estEpingle && <span aria-hidden="true">📌</span>}
+                  {g.label}
+                </p>
                 <ul className="space-y-3">
                   {g.items.map(({ c, idx }) => (
                     <li key={idx} className={`group border-l-2 pl-3 flex items-start justify-between gap-3 ${
+                      c.epingle ? "border-absences/60 bg-absences-light/30 rounded-r-lg pr-2 py-1" :
                       c.type === "appel" ? "border-benevoles/50" : c.type === "email" ? "border-communication/50" : "border-familles/40"}`}>
                       <div className="min-w-0">
                         <p className="text-xs text-muted mb-0.5 flex items-center gap-1.5 flex-wrap">
@@ -289,13 +313,28 @@ export default function JournalSuivi({
                             </span>
                           )}
                           {c.heure && <span>{c.heure}</span>}
+                          {c.date && !c.epingle && <span className="text-muted/60">{c.date}</span>}
                         </p>
                         {c.texte && <p className="text-sm text-foreground whitespace-pre-wrap">{c.texte}</p>}
                       </div>
-                      <button onClick={() => handleDelete(idx)} aria-label="Supprimer cette entrée" title="Supprimer"
-                        className="shrink-0 p-1 rounded text-muted hover:text-absences-dark hover:bg-absences-light transition-colors">
-                        <X size={14} />
-                      </button>
+                      <div className="shrink-0 flex items-center gap-0.5">
+                        <button
+                          onClick={() => handleTogglePin(idx)}
+                          aria-label={c.epingle ? "Désépingler" : "Épingler"}
+                          title={c.epingle ? "Désépingler" : "Épingler en haut"}
+                          disabled={saving}
+                          className={`p-1 rounded text-base leading-none transition-colors ${
+                            c.epingle
+                              ? "text-absences-dark hover:bg-absences-light"
+                              : "text-muted/40 hover:text-absences-dark hover:bg-absences-light opacity-0 group-hover:opacity-100"}`}
+                        >
+                          📌
+                        </button>
+                        <button onClick={() => handleDelete(idx)} aria-label="Supprimer cette entrée" title="Supprimer"
+                          className="p-1 rounded text-muted hover:text-absences-dark hover:bg-absences-light transition-colors opacity-0 group-hover:opacity-100">
+                          <X size={14} />
+                        </button>
+                      </div>
                     </li>
                   ))}
                 </ul>

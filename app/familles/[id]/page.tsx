@@ -7,6 +7,7 @@ import SlideOver, { Field, Input, Select, Textarea, FormRow, SaveButton, DeleteB
 import JournalSuivi from "@/components/JournalSuivi"
 import AdresseAutocomplete from "@/components/AdresseAutocomplete"
 import DateInput from "@/components/DateInput"
+import PhoneInput from "@/components/PhoneInput"
 import { ChevronRight, Pencil, Plus, Upload, RotateCcw } from "lucide-react"
 import {
   fetchFamilles, fetchMembres, updateFamille, addMembre, deleteMembre, uploadFichier,
@@ -62,7 +63,7 @@ const statutStyle: Record<string, string> = {
 const emptyMembre = (idFamille: string): Partial<MembreSheet> => ({
   ID_Famille: idFamille,
   Nom: "", Prenom: "", Role: "Adulte",
-  Genre: "", Telephone: "", Email: "",
+  Genre: "", Telephone: "", Email: "", WhatsApp: "", Contact_Principal: "",
   Langue_Maternelle: "", Pays_Origine: "",
   Beneficiaire: "Non",
   Annee_Scolaire: getCurrentAnneeScolaire(), Niveau: "", Disponibilite: "", Source_Orientation: "",
@@ -461,14 +462,24 @@ export default function FicheFamillePage({ params }: { params: Promise<{ id: str
               <DateInput value={membreForm.Date_Naissance} onChange={v => setMembreForm(f => ({ ...f, Date_Naissance: v }))} />
             </Field>
           </FormRow>
-          <FormRow>
-            <Field label="Téléphone">
-              <Input value={String(membreForm.Telephone ?? "")} onChange={e => setMembreForm(f => ({ ...f, Telephone: e.target.value }))} />
+          <Field label="Téléphone">
+            <PhoneInput value={String(membreForm.Telephone ?? "")} onChange={v => setMembreForm(f => ({ ...f, Telephone: v }))} />
+          </Field>
+          <Field label="WhatsApp">
+            <PhoneInput value={String(membreForm.WhatsApp ?? "")} onChange={v => setMembreForm(f => ({ ...f, WhatsApp: v }))} placeholder="Numéro WhatsApp" />
+          </Field>
+          <Field label="Email">
+            <Input type="email" value={String(membreForm.Email ?? "")} onChange={e => setMembreForm(f => ({ ...f, Email: e.target.value }))} />
+          </Field>
+          {membreForm.Role !== "Enfant" && (
+            <Field label="Contact principal">
+              <Select value={String(membreForm.Contact_Principal ?? "")} onChange={e => setMembreForm(f => ({ ...f, Contact_Principal: e.target.value }))}>
+                <option value="">— Choisir —</option>
+                <option value="Oui">Oui</option>
+                <option value="Non">Non</option>
+              </Select>
             </Field>
-            <Field label="Email">
-              <Input type="email" value={String(membreForm.Email ?? "")} onChange={e => setMembreForm(f => ({ ...f, Email: e.target.value }))} />
-            </Field>
-          </FormRow>
+          )}
           <FormRow>
             <Field label="Pays d'origine">
               <Input value={String(membreForm.Pays_Origine ?? "")} onChange={e => setMembreForm(f => ({ ...f, Pays_Origine: e.target.value }))} />
@@ -578,10 +589,10 @@ export default function FicheFamillePage({ params }: { params: Promise<{ id: str
                 </div>
               )}
               <FormRow>
-                <Field label="Disponibilité">
+                <Field label="Disponibilité" hint="ex. Mardi et Mercredi">
                   <Input value={String(membreForm.Disponibilite ?? "")} onChange={e => setMembreForm(f => ({ ...f, Disponibilite: e.target.value }))} />
                 </Field>
-                <Field label="Orientation">
+                <Field label="Orientation" hint="ex. Bouche à oreille">
                   <Input value={String(membreForm.Source_Orientation ?? "")} onChange={e => setMembreForm(f => ({ ...f, Source_Orientation: e.target.value }))} />
                 </Field>
               </FormRow>

@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
+import Link from "next/link"
 import {
   BarChart2, AlertTriangle, CheckCircle,
   Clock, GraduationCap, CalendarDays, ChevronDown, Search, X,
@@ -31,6 +32,7 @@ interface Beneficiaire {
   nom: string
   niveau: string
   statut: string
+  idFamille: string
 }
 
 interface StudentStats {
@@ -303,7 +305,10 @@ export default function AssiduiteePage() {
                       <AlertTriangle size={9} /> ALERTE
                     </span>
                   </div>
-                  <p className="font-semibold text-foreground">{s.benef.prenom} {s.benef.nom}</p>
+                  {s.benef.idFamille
+                    ? <Link href={`/familles/${s.benef.idFamille}/membre/${s.benef.id}`} className="font-semibold text-foreground hover:text-familles-dark hover:underline">{s.benef.prenom} {s.benef.nom}</Link>
+                    : <p className="font-semibold text-foreground">{s.benef.prenom} {s.benef.nom}</p>
+                  }
                   <p className="text-xs text-muted mt-0.5">
                     {s.absents} abs. · {s.excuses} excusé{s.excuses > 1 ? "s" : ""} · {s.seances} séances
                   </p>
@@ -322,7 +327,10 @@ export default function AssiduiteePage() {
                       <Clock size={9} /> RISQUE
                     </span>
                   </div>
-                  <p className="font-semibold text-foreground">{s.benef.prenom} {s.benef.nom}</p>
+                  {s.benef.idFamille
+                    ? <Link href={`/familles/${s.benef.idFamille}/membre/${s.benef.id}`} className="font-semibold text-foreground hover:text-familles-dark hover:underline">{s.benef.prenom} {s.benef.nom}</Link>
+                    : <p className="font-semibold text-foreground">{s.benef.prenom} {s.benef.nom}</p>
+                  }
                   <p className="text-xs text-absences-dark/70 mt-0.5">
                     {s.absents} abs. · encore 1 → décrochage
                   </p>
@@ -433,7 +441,10 @@ export default function AssiduiteePage() {
                           </span>
                         </div>
                         <div>
-                          <p className="font-medium text-foreground">{s.benef.prenom} {s.benef.nom}</p>
+                          {s.benef.idFamille
+                            ? <Link href={`/familles/${s.benef.idFamille}/membre/${s.benef.id}`} className="font-medium text-foreground hover:text-familles-dark hover:underline">{s.benef.prenom} {s.benef.nom}</Link>
+                            : <p className="font-medium text-foreground">{s.benef.prenom} {s.benef.nom}</p>
+                          }
                           {alerte && (
                             <span className="text-[10px] text-alert font-semibold flex items-center gap-0.5">
                               <AlertTriangle size={9} /> Décrochage

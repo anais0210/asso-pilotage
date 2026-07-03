@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, use } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import SlideOver, { Field, Input, Select, Textarea, FormRow, SaveButton, DeleteButton } from "@/components/SlideOver"
+import PhoneInput from "@/components/PhoneInput"
 import JournalSuivi from "@/components/JournalSuivi"
 import DateInput from "@/components/DateInput"
 import { ChevronRight, ChevronDown, Plus, Pencil, Upload, FileText, ExternalLink, X } from "lucide-react"
@@ -11,7 +12,7 @@ import {
   fetchFamilles, fetchMembre, updateMembre, deleteMembre,
   addPaiement, updatePaiement, deletePaiement, addInscription, updateInscription, uploadFichier,
   fetchDocuments, deleteDocument, getCurrentAnneeScolaire, getAnneeScolaireOptions, fetchScolariteFamille,
-  fetchEtablissements, fetchProfesseurs, addEtablissement, addProfesseur, addScolarite,
+  fetchEtablissements, fetchProfesseurs, addEtablissement, addProfesseur, addScolarite, fetchEvaluations,
   type FamilleSheet, type MembreSheet, type PaiementSheet, type InscriptionSheet, type DocumentJoint, type ScolariteEntry,
   type EtablissementItem, type ProfesseurItem
 } from "@/lib/sheets-api"
@@ -115,6 +116,7 @@ export default function FicheMembrePage({ params }: { params: Promise<{ id: stri
   const [inscriptions, setInscriptions] = useState<InscriptionSheet[]>([])
   const [documents, setDocuments] = useState<DocumentJoint[]>([])
   const [scolarites, setScolarites] = useState<ScolariteEntry[]>([])
+  const [niveauMembre, setNiveauMembre] = useState<string | null>(null)
   const [loading, setLoading]   = useState(true)
   const [loadError, setLoadError] = useState(false)
   const [slideOpen, setSlideOpen] = useState(false)
@@ -174,6 +176,18 @@ export default function FicheMembrePage({ params }: { params: Promise<{ id: stri
       } catch (e) {
         console.error(e)
         setScolarites([])
+      }
+
+      // Niveau CECRL — évaluation la plus récente de ce membre (best-effort)
+      try {
+        const evals = await fetchEvaluations()
+        const evalsPersonne = evals
+          .filter(e => e.ID_Personne === membreId)
+          .sort((a, b) => b.Date.localeCompare(a.Date))
+        setNiveauMembre(evalsPersonne[0]?.Niveau || null)
+      } catch (e) {
+        console.error(e)
+        setNiveauMembre(null)
       }
 
       // Mise à jour automatique : inscriptions EN COURS dont l'année est échue → Terminé
@@ -508,6 +522,17 @@ export default function FicheMembrePage({ params }: { params: Promise<{ id: stri
           {champsInfos.map(c => (
             <InfoRow key={c.label} label={c.label} value={c.value} />
           ))}
+          {niveauMembre && (
+            <div>
+              <p className="text-xs text-muted mb-0.5">Niveau</p>
+              <Link
+                href={`/notes?membre=${encodeURIComponent(membre.Prenom + " " + membre.Nom)}`}
+                className="text-sm font-medium text-positionnement-dark hover:underline"
+              >
+                {niveauMembre}
+              </Link>
+            </div>
+          )}
         </div>
       </div>
 
@@ -856,23 +881,25 @@ export default function FicheMembrePage({ params }: { params: Promise<{ id: stri
               </Select>
             </Field>
           </FormRow>
-          <Field label="Niveau scolaire">
-            <Select value={String(reinscForm.Niveau ?? "")} onChange={e => setReinscForm(f => ({ ...f, Niveau: e.target.value }))}>
-              <option value="">—</option>
-              <ExtraOption value={String(reinscForm.Niveau ?? "")} list={NIVEAUX} />
-              <option value="CM1">CM1</option>
-              <option value="CE2">CE2</option>
-              <option value="6eme">6ème</option>
-              <option value="5eme">5ème</option>
-              <option value="4eme">4ème</option>
-              <option value="2nde">2nde</option>
-              <option value="Terminale CAP">Terminale CAP</option>
-            </Select>
-          </Field>
-          <Field label="Disponibilités" hint="ex. Lundi matin, Mercredi">
+          {estEnfant && (
+            <Field label="Niveau scolaire">
+              <Select value={String(reinscForm.Niveau ?? "")} onChange={e => setReinscForm(f => ({ ...f, Niveau: e.target.value }))}>
+                <option value="">—</option>
+                <ExtraOption value={String(reinscForm.Niveau ?? "")} list={NIVEAUX} />
+                <option value="CM1">CM1</option>
+                <option value="CE2">CE2</option>
+                <option value="6eme">6ème</option>
+                <option value="5eme">5ème</option>
+                <option value="4eme">4ème</option>
+                <option value="2nde">2nde</option>
+                <option value="Terminale CAP">Terminale CAP</option>
+              </Select>
+            </Field>
+          )}
+          <Field label="Disponibilités" hint="ex. Mardi et Mercredi">
             <Input value={String(reinscForm.Disponibilite ?? "")} onChange={e => setReinscForm(f => ({ ...f, Disponibilite: e.target.value }))} />
           </Field>
-          <Field label="Orientation" hint="ex. CAF, CPAM…">
+          <Field label="Orientation" hint="ex. Bouche à oreille">
             <Input value={String(reinscForm.Orientation ?? "")} onChange={e => setReinscForm(f => ({ ...f, Orientation: e.target.value }))} />
           </Field>
           <FormRow>
@@ -959,23 +986,25 @@ export default function FicheMembrePage({ params }: { params: Promise<{ id: stri
               </Select>
             </Field>
           </FormRow>
-          <Field label="Niveau scolaire">
-            <Select value={inscForm.Niveau} onChange={e => setInscForm(f => ({ ...f, Niveau: e.target.value }))}>
-              <option value="">—</option>
-              <ExtraOption value={inscForm.Niveau} list={NIVEAUX} />
-              <option value="CM1">CM1</option>
-              <option value="CE2">CE2</option>
-              <option value="6eme">6ème</option>
-              <option value="5eme">5ème</option>
-              <option value="4eme">4ème</option>
-              <option value="2nde">2nde</option>
-              <option value="Terminale CAP">Terminale CAP</option>
-            </Select>
-          </Field>
-          <Field label="Disponibilités" hint="ex. Lundi matin, Mercredi">
+          {estEnfant && (
+            <Field label="Niveau scolaire">
+              <Select value={inscForm.Niveau} onChange={e => setInscForm(f => ({ ...f, Niveau: e.target.value }))}>
+                <option value="">—</option>
+                <ExtraOption value={inscForm.Niveau} list={NIVEAUX} />
+                <option value="CM1">CM1</option>
+                <option value="CE2">CE2</option>
+                <option value="6eme">6ème</option>
+                <option value="5eme">5ème</option>
+                <option value="4eme">4ème</option>
+                <option value="2nde">2nde</option>
+                <option value="Terminale CAP">Terminale CAP</option>
+              </Select>
+            </Field>
+          )}
+          <Field label="Disponibilités" hint="ex. Mardi et Mercredi">
             <Input value={inscForm.Disponibilite} onChange={e => setInscForm(f => ({ ...f, Disponibilite: e.target.value }))} />
           </Field>
-          <Field label="Orientation" hint="ex. CAF, CPAM…">
+          <Field label="Orientation" hint="ex. Bouche à oreille">
             <Input value={inscForm.Orientation} onChange={e => setInscForm(f => ({ ...f, Orientation: e.target.value }))} />
           </Field>
           <FormRow>
@@ -1104,16 +1133,14 @@ export default function FicheMembrePage({ params }: { params: Promise<{ id: stri
               <DateInput value={form.Date_Naissance != null ? String(form.Date_Naissance) : ""} onChange={v => setForm(f => ({ ...f, Date_Naissance: v }))} />
             </Field>
           </FormRow>
-          <FormRow>
-            <Field label="Téléphone">
-              <Input value={String(form.Telephone ?? "")} onChange={e => setForm(f => ({ ...f, Telephone: e.target.value }))} />
-            </Field>
-            <Field label="Email">
-              <Input type="email" value={String(form.Email ?? "")} onChange={e => setForm(f => ({ ...f, Email: e.target.value }))} />
-            </Field>
-          </FormRow>
+          <Field label="Téléphone">
+            <PhoneInput value={String(form.Telephone ?? "")} onChange={v => setForm(f => ({ ...f, Telephone: v }))} />
+          </Field>
           <Field label="WhatsApp">
-            <Input value={String(form.WhatsApp ?? "")} onChange={e => setForm(f => ({ ...f, WhatsApp: e.target.value }))} />
+            <PhoneInput value={String(form.WhatsApp ?? "")} onChange={v => setForm(f => ({ ...f, WhatsApp: v }))} placeholder="Numéro WhatsApp" />
+          </Field>
+          <Field label="Email">
+            <Input type="email" value={String(form.Email ?? "")} onChange={e => setForm(f => ({ ...f, Email: e.target.value }))} />
           </Field>
           <FormRow>
             <Field label="Pays d'origine">

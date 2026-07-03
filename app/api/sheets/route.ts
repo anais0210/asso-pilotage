@@ -724,6 +724,7 @@ async function getBeneficiaires(sheets: Sheets, audience?: string) {
       const type = String(p["Categorie"]).toLowerCase().startsWith("enfant") ? "eleve" : "parent"
       return {
         ID_Personne: id,
+        ID_Famille: String(p["Famille ID"] ?? p["famille id"] ?? p["famille_id"] ?? ""),
         type,
         Prenom: p["Prenom"] ?? "",
         Nom: p["Nom"] ?? "",

@@ -74,7 +74,7 @@ export async function POST(request: Request) {
 
   const payload = {
     contents: [{ parts: [{ text: buildPrompt(body) }] }],
-    generationConfig: { responseMimeType: "application/json", maxOutputTokens: 8192 },
+    generationConfig: { responseMimeType: "application/json", maxOutputTokens: 65536 },
   }
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`
 
@@ -94,7 +94,8 @@ export async function POST(request: Request) {
     const rawText = result?.candidates?.[0]?.content?.parts?.[0]?.text
     if (!rawText) return NextResponse.json({ error: "Erreur Gemini : réponse vide" }, { status: 502 })
 
-    const parsed: { segments: string[] } = JSON.parse(rawText)
+    const cleaned = rawText.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim()
+    const parsed: { segments: string[] } = JSON.parse(cleaned)
     return NextResponse.json(parsed)
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Erreur inconnue"

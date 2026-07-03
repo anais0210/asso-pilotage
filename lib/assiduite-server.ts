@@ -49,6 +49,7 @@ export interface Session {
 }
 export interface Beneficiaire {
   id: number; prenom: string; nom: string; niveau: string; statut: string
+  idFamille: string
 }
 export interface AssiduiteData {
   sessions: Session[]
@@ -92,9 +93,13 @@ async function readAssiduiteData(): Promise<AssiduiteData> {
   const intName = new Map<string, string>()
   for (const i of intervenants) intName.set(String(i["id"]), `${i["prenom"] ?? ""} ${i["nom"] ?? ""}`.trim())
 
-  // Personnes : id -> {prenom, nom}
-  const persName = new Map<string, { prenom: string; nom: string }>()
-  for (const p of personnes) persName.set(String(p["id"]), { prenom: p["prenom"] ?? "", nom: p["nom"] ?? "" })
+  // Personnes : id -> {prenom, nom, idFamille}
+  const persName = new Map<string, { prenom: string; nom: string; idFamille: string }>()
+  for (const p of personnes) persName.set(String(p["id"]), {
+    prenom: p["prenom"] ?? "",
+    nom: p["nom"] ?? "",
+    idFamille: String(p["famille id"] ?? p["famille_id"] ?? p["Famille ID"] ?? ""),
+  })
 
   // Inscription retenue par personne : "En cours" prioritaire, sinon la 1re vue
   const inscByPers = new Map<string, { niveau: string; statut: string }>()
@@ -118,6 +123,7 @@ async function readAssiduiteData(): Promise<AssiduiteData> {
     beneficiaires.push({
       id: Number(pid), prenom: p.prenom, nom: p.nom,
       niveau: insc.niveau, statut: insc.statut,
+      idFamille: p.idFamille,
     })
   }
 

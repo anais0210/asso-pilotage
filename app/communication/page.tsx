@@ -139,16 +139,14 @@ const plateformeStyle: Record<Plateforme, string> = {
 // ──────────────────────────────────────────────
 // Aperçu du post (simulation réseau social)
 // ──────────────────────────────────────────────
-const ASSO_NAME = "Ada Tech School"
+const ASSO_NAME = "Area"
 const ASSO_HANDLE = "Area Nantes"
-const ASSO_INITIALS = "AT"
 
 function PreviewAvatar({ size = 9 }: { size?: 7 | 9 }) {
-  const classes = size === 7 ? "w-7 h-7 text-[9px]" : "w-9 h-9 text-xs"
+  const classes = size === 7 ? "w-7 h-7" : "w-9 h-9"
   return (
-    <div className={`${classes} rounded-full bg-slate-800 text-white flex items-center justify-center font-bold shrink-0`}>
-      {ASSO_INITIALS}
-    </div>
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src="/area-logo.png" alt="Area" className={`${classes} rounded-full object-cover shrink-0`} />
   )
 }
 

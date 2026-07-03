@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
-import { BookOpen, ExternalLink, FileDown, RotateCcw, Sparkles } from "lucide-react"
+import { BookOpen, FileDown, Image as ImageIcon, RotateCcw, Sparkles } from "lucide-react"
 import SplitPane from "@/components/rapports/SplitPane"
 import SlidePreview from "@/components/rapports/SlidePreview"
 import AiChatPanel from "@/components/rapports/AiChatPanel"
@@ -29,6 +29,7 @@ import {
 import { lireSlide, pdfDownloadUrl, syncSlide, validerRapport } from "@/lib/rapports-slides-api"
 import {
   analyserTemplate,
+  choisirDisposition,
   listerTemplatesDrive,
   suggererStylesGlobaux,
   type SuggestionStyleGlobal,
@@ -83,8 +84,10 @@ export default function EditionRapportPage() {
   const [bibliothequeErreur, setBibliothequeErreur] = useState<string | null>(null)
   const [templatesDrive, setTemplatesDrive] = useState<{ id: string; nom: string }[]>([])
   const [suggestionsGlobales, setSuggestionsGlobales] = useState<SuggestionStyleGlobal[]>([])
+  const [logoUrl, setLogoUrl] = useState<string | undefined>(undefined)
   const editableRef = useRef<HTMLDivElement>(null)
   const bibliothequePdfInputRef = useRef<HTMLInputElement>(null)
+  const logoInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     const all = load<Brouillon[]>(STORAGE_BROUILLONS, BROUILLONS_MOCK)
@@ -97,6 +100,7 @@ export default function EditionRapportPage() {
     // StyleRapport (ex. `typographie`) — évite un style incomplet issu d'un ancien localStorage.
     setStyle({ ...STYLE_DEFAUT, ...found?.style })
     setFormat(found?.format ?? FORMAT_DEFAUT)
+    setLogoUrl(found?.logoUrl)
     // Gabarit/données décidés lors de la génération initiale sur le dashboard (template importé
     // avant même l'ouverture de cet éditeur) — voir app/rapports/page.tsx § handleGenerer.
     setDispositionParDiapositive(found?.dispositionInitiale ?? {})
@@ -249,6 +253,20 @@ export default function EditionRapportPage() {
   // Import PDF direct depuis l'éditeur (en plus des Templates Drive / suggestions IA déjà
   // disponibles) — même mécanisme que le dashboard (app/rapports/page.tsx § handlePdfSelected),
   // mais applique le style ET le mapping gabarit immédiatement puisque l'éditeur est déjà ouvert.
+  async function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ""
+    if (!file) return
+    const dataUrl = await lireFichierEnDataUrl(file)
+    setLogoUrl(dataUrl)
+    // IA best-effort : adapter la disposition de la 1ère diapositive (couverture) au logo
+    const slide0 = decouperDiapositives(contenuActif)[0] ?? ""
+    try {
+      const { disposition } = await choisirDisposition(0, slide0, true, "Logo de l'association à intégrer")
+      setDispositionParDiapositive(d => ({ ...d, 0: disposition }))
+    } catch { /* best-effort */ }
+  }
+
   async function handleImporterTemplatePdf(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     e.target.value = ""
@@ -294,7 +312,7 @@ export default function EditionRapportPage() {
       }
     }
 
-    const next = { ...brouillon, contenu: contenuActuel, style, format, slideId, slideUrl, modifieLe: new Date().toISOString().split("T")[0] }
+    const next = { ...brouillon, contenu: contenuActuel, style, format, slideId, slideUrl, logoUrl, modifieLe: new Date().toISOString().split("T")[0] }
     save(STORAGE_BROUILLONS, all.map((b) => (b.id === next.id ? next : b)))
 
     router.push("/rapports")
@@ -390,6 +408,7 @@ export default function EditionRapportPage() {
                 </button>
 
                 <input ref={bibliothequePdfInputRef} type="file" accept="application/pdf" className="hidden" onChange={handleImporterTemplatePdf} />
+                <input ref={logoInputRef} type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
 
                 {bibliothequeOuverte && (
                   <div className="absolute top-full mt-1 left-0 bg-surface border border-border rounded-lg shadow-lg p-3 z-20 flex flex-col gap-3 max-h-96 overflow-y-auto w-80">
@@ -456,6 +475,14 @@ export default function EditionRapportPage() {
                 )}
               </div>
 
+              <button
+                type="button"
+                onClick={() => logoInputRef.current?.click()}
+                className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border border-rapports/30 text-rapports-dark hover:bg-rapports-light transition-colors"
+              >
+                <ImageIcon size={13} /> Ajouter un logo
+              </button>
+
               <label className="flex items-center gap-1.5 text-xs font-medium text-muted cursor-pointer select-none">
                 <input
                   type="checkbox"
@@ -474,7 +501,7 @@ export default function EditionRapportPage() {
                 dispositionParDiapositive={dispositionParDiapositive}
                 donneesGabaritParDiapositive={donneesGabaritParDiapositive}
                 format={format}
-                logoUrl={brouillon.logoUrl}
+                logoUrl={logoUrl}
                 onActiveParagraphChange={setActiveParaIndex}
                 selectedSlideIndex={selectedSlideIndex}
                 onSlideClick={setSelectedSlideIndex}
@@ -514,33 +541,14 @@ export default function EditionRapportPage() {
               >
                 {validation ? "Validation en cours…" : "✅ Valider le rapport"}
               </button>
-              <button
-                type="button"
-                onClick={handleFermer}
-                className="text-sm font-medium px-4 py-2.5 rounded-xl text-alert hover:bg-red-50 transition-colors"
-              >
-                ❌ Fermer sans enregistrer
-              </button>
               <div className="flex gap-2">
-                {brouillon.slideUrl ? (
-                  <a
-                    href={brouillon.slideUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex-1 flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl border border-border text-muted hover:bg-slate-50 transition-colors"
-                  >
-                    <ExternalLink size={14} /> Télécharger en Google Slides
-                  </a>
-                ) : (
-                  <button
-                    type="button"
-                    disabled
-                    title="Disponible une fois les dossiers Drive Rapports configurés"
-                    className="flex-1 flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl border border-border text-muted opacity-50 cursor-not-allowed"
-                  >
-                    <ExternalLink size={14} /> Télécharger en Google Slides
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={handleFermer}
+                  className="flex-1 text-sm font-medium px-3 py-2 rounded-xl text-alert hover:bg-red-50 transition-colors border border-border"
+                >
+                  ❌ Fermer
+                </button>
                 {brouillon.slideId ? (
                   <a
                     href={pdfDownloadUrl(brouillon.slideId)}
