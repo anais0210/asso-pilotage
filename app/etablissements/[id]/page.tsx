@@ -2,10 +2,10 @@
 
 import { useState, useEffect, use } from "react"
 import Link from "next/link"
-import { ChevronRight, Plus, GraduationCap, Users, Phone } from "lucide-react"
+import { ChevronRight, Plus, GraduationCap, Users, Phone, X } from "lucide-react"
 import SlideOver, { Field, Input, FormRow, SaveButton } from "@/components/SlideOver"
 import {
-  fetchEtablissementDetail, addProfesseur,
+  fetchEtablissementDetail, addProfesseur, deleteProfesseur,
   type EtablissementDetailSheet, type EleveEtablissement, type ProfesseurItem,
 } from "@/lib/sheets-api"
 
@@ -37,6 +37,12 @@ export default function EtablissementDetailPage({ params }: { params: Promise<{ 
   }
 
   useEffect(() => { loadData() }, [id])
+
+  async function handleDeleteProfesseur(idProf: string, nom: string) {
+    if (!confirm(`Supprimer le professeur "${nom}" ? Cette action est irréversible et retirera sa référence dans la scolarité des élèves associés.`)) return
+    await deleteProfesseur(idProf)
+    await loadData()
+  }
 
   async function handleAddProfesseur() {
     if (saving || !profForm.Nom.trim()) return
@@ -153,14 +159,23 @@ export default function EtablissementDetailPage({ params }: { params: Promise<{ 
             <div className="bg-surface border border-border rounded-xl overflow-hidden">
               <ul className="divide-y divide-border">
                 {etab.professeurs.map((prof: ProfesseurItem) => (
-                  <li key={prof.ID} className="px-5 py-4 flex items-center justify-between gap-4">
-                    <span className="font-semibold text-foreground">{prof.Nom}</span>
-                    <div className="flex items-center gap-4 text-xs text-muted shrink-0">
-                      {prof.Telephone && (
-                        <span className="flex items-center gap-1"><Phone size={11} />{prof.Telephone}</span>
-                      )}
-                      {prof.Email && <span className="truncate max-w-[180px]">{prof.Email}</span>}
+                  <li key={prof.ID} className="flex items-center">
+                    <div className="flex-1 px-5 py-4 flex items-center justify-between gap-4">
+                      <span className="font-semibold text-foreground">{prof.Nom}</span>
+                      <div className="flex items-center gap-4 text-xs text-muted shrink-0">
+                        {prof.Telephone && (
+                          <span className="flex items-center gap-1"><Phone size={11} />{prof.Telephone}</span>
+                        )}
+                        {prof.Email && <span className="truncate max-w-[180px]">{prof.Email}</span>}
+                      </div>
                     </div>
+                    <button
+                      onClick={() => handleDeleteProfesseur(prof.ID, prof.Nom)}
+                      className="px-4 py-4 text-muted hover:text-red-500 transition-colors shrink-0"
+                      title="Supprimer ce professeur"
+                    >
+                      <X size={14} />
+                    </button>
                   </li>
                 ))}
               </ul>

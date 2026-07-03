@@ -3,12 +3,12 @@
 import { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { Search, Plus } from "lucide-react"
+import { Search, Plus, X } from "lucide-react"
 import SlideOver, { Field, Input, Select, FormRow, SaveButton } from "@/components/SlideOver"
 import AdresseAutocomplete from "@/components/AdresseAutocomplete"
 import Pagination, { usePagination } from "@/components/Pagination"
 import {
-  fetchFamilles, fetchMembres, addFamille, fetchEtablissementsAvecStats, addEtablissement,
+  fetchFamilles, fetchMembres, addFamille, fetchEtablissementsAvecStats, addEtablissement, deleteEtablissement,
   isApiConfigured,
   type FamilleSheet, type MembreSheet, type EtablissementStats,
 } from "@/lib/sheets-api"
@@ -64,6 +64,12 @@ export default function FamillesPage() {
 
   useEffect(() => { loadData() }, [loadData])
   function switchOnglet(o: Onglet) { setOnglet(o); setSearch("") }
+
+  async function handleDeleteEtablissement(id: string, nom: string) {
+    if (!confirm(`Supprimer "${nom}" ? Cette action est irréversible et retirera aussi tous ses professeurs et les références dans la scolarité des élèves.`)) return
+    await deleteEtablissement(id)
+    await loadData()
+  }
 
   async function handleSaveEtablissement() {
     await addEtablissement({ Type: etabForm.Type, Nom: etabForm.Nom })
@@ -337,10 +343,10 @@ export default function FamillesPage() {
                       <div className="bg-surface border border-border rounded-xl overflow-hidden">
                         <ul className="divide-y divide-border">
                           {etabsDuType.map(e => (
-                            <li key={e.ID}>
+                            <li key={e.ID} className="flex items-center">
                               <Link
                                 href={`/etablissements/${e.ID}`}
-                                className="px-5 py-4 flex items-center justify-between gap-4 hover:bg-slate-50 transition-colors block"
+                                className="flex-1 px-5 py-4 flex items-center justify-between gap-4 hover:bg-slate-50 transition-colors"
                               >
                                 <span className="font-semibold text-foreground">{e.Nom}</span>
                                 <div className="flex items-center gap-3 text-xs text-muted shrink-0">
@@ -351,6 +357,13 @@ export default function FamillesPage() {
                                   <span><span className="font-semibold text-foreground">{e.nb_professeurs}</span> prof{e.nb_professeurs !== 1 ? "s" : ""}</span>
                                 </div>
                               </Link>
+                              <button
+                                onClick={() => handleDeleteEtablissement(e.ID, e.Nom)}
+                                className="px-4 py-4 text-muted hover:text-red-500 transition-colors shrink-0"
+                                title="Supprimer cet établissement"
+                              >
+                                <X size={14} />
+                              </button>
                             </li>
                           ))}
                         </ul>

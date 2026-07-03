@@ -119,9 +119,11 @@ export async function POST(request: NextRequest) {
       case "deleteIntervenant": return ok(await deleteIntervenant(sheets, body.idIntervenant))
       case "upsertEvaluation":  return ok(await upsertEvaluation(sheets, String(body.idPersonne), body.session, body.data))
       case "deleteEvaluation":  return ok(await deleteEvaluation(sheets, body.idEvaluation))
-      case "addEtablissement": return ok(await addEtablissement(sheets, body.data))
-      case "addProfesseur":    return ok(await addProfesseur(sheets, body.data))
-      case "addScolarite":     return ok(await addScolariteEntry(sheets, body))
+      case "addEtablissement":    return ok(await addEtablissement(sheets, body.data))
+      case "deleteEtablissement": return ok(await deleteEtablissement(sheets, body.idEtab))
+      case "addProfesseur":       return ok(await addProfesseur(sheets, body.data))
+      case "deleteProfesseur":    return ok(await deleteProfesseur(sheets, body.idProf))
+      case "addScolarite":        return ok(await addScolariteEntry(sheets, body))
       case "uploadFichier":   return ok(await uploadFichier(sheets, body))
       case "deleteDocument":  return ok(await deleteDocument(sheets, body.idDoc))
       case "addPost":         return ok(await addPost(sheets, body.data))
@@ -1552,6 +1554,36 @@ async function getEtablissementDetail(sheets: Sheets, idEtab: string) {
     eleves,
     professeurs,
   }
+}
+
+async function deleteEtablissement(sheets: Sheets, idEtab: string) {
+  // Cascade : nettoie les références à cet établissement dans PROFESSEUR et SCOLARITE
+  // avant de supprimer la ligne ETABLISSEMENT elle-même.
+  // PROFESSEUR : supprime les profs liés (ils n'ont pas de sens sans établissement)
+  await deleteRowsWhere(sheets, "PROFESSEUR", "Etablissement ID", [String(idEtab)])
+  // SCOLARITE : efface l'établissement et le prof principal sur les lignes qui le référencent
+  const scolarites = await sheetToObjects(sheets, "SCOLARITE")
+  for (const sc of scolarites) {
+    if (String(sc["Etablissement ID"]) === String(idEtab)) {
+      await updateRowById(sheets, "SCOLARITE", String(sc["ID"]), {
+        "Etablissement ID": "", "Prof principal ID": "",
+      })
+    }
+  }
+  const deleted = await deleteRowById(sheets, "ETABLISSEMENT", idEtab)
+  return deleted ? { ok: true } : { error: "Établissement introuvable" }
+}
+
+async function deleteProfesseur(sheets: Sheets, idProf: string) {
+  // Cascade : efface la référence au prof dans toutes les lignes SCOLARITE qui le mentionnent
+  const scolarites = await sheetToObjects(sheets, "SCOLARITE")
+  for (const sc of scolarites) {
+    if (String(sc["Prof principal ID"]) === String(idProf)) {
+      await updateRowById(sheets, "SCOLARITE", String(sc["ID"]), { "Prof principal ID": "" })
+    }
+  }
+  const deleted = await deleteRowById(sheets, "PROFESSEUR", idProf)
+  return deleted ? { ok: true } : { error: "Professeur introuvable" }
 }
 
 async function addScolariteEntry(sheets: Sheets, body: Record<string, unknown>) {

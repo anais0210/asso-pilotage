@@ -367,6 +367,14 @@ export async function addProfesseur(data: { Nom: string; Telephone: string; Emai
   return apiPost({ action: "addProfesseur", data }) as Promise<{ ok: boolean; ID: string }>
 }
 
+export async function deleteEtablissement(idEtab: string): Promise<{ ok: boolean }> {
+  return apiPost({ action: "deleteEtablissement", idEtab }) as Promise<{ ok: boolean }>
+}
+
+export async function deleteProfesseur(idProf: string): Promise<{ ok: boolean }> {
+  return apiPost({ action: "deleteProfesseur", idProf }) as Promise<{ ok: boolean }>
+}
+
 export async function addScolarite(idMembre: string, idEtab: string, idProf: string, rencontre?: string): Promise<{ ok: boolean }> {
   return apiPost({ action: "addScolarite", idMembre, idEtab, idProf, rencontre }) as Promise<{ ok: boolean }>
 }
