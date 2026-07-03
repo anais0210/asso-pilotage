@@ -326,6 +326,31 @@ export async function uploadPostMedia(data: {
 export interface EtablissementItem { ID: string; Type: string; Nom: string }
 export interface ProfesseurItem    { ID: string; Nom: string; Telephone: string; Email: string }
 
+export interface EtablissementStats {
+  ID: string; Type: string; Nom: string
+  nb_enfants: number; nb_adultes: number; nb_professeurs: number
+}
+
+export interface EleveEtablissement {
+  ID_Membre: string; ID_Famille: string
+  Nom: string; Prenom: string; Niveau: string
+  ProfPrincipal: { Nom: string; Telephone: string; Email: string } | null
+}
+
+export interface EtablissementDetailSheet {
+  ID: string; Type: string; Nom: string
+  eleves: EleveEtablissement[]
+  professeurs: ProfesseurItem[]
+}
+
+export async function fetchEtablissementsAvecStats(): Promise<EtablissementStats[]> {
+  return apiGet("getEtablissementsAvecStats") as Promise<EtablissementStats[]>
+}
+
+export async function fetchEtablissementDetail(idEtab: string): Promise<EtablissementDetailSheet> {
+  return apiGet("getEtablissementDetail", { idEtab }) as Promise<EtablissementDetailSheet>
+}
+
 export async function fetchEtablissements(): Promise<EtablissementItem[]> {
   return apiGet("getEtablissements") as Promise<EtablissementItem[]>
 }

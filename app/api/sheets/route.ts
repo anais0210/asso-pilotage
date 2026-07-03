@@ -68,6 +68,10 @@ export async function GET(request: NextRequest) {
         return ok(await getEtablissements(sheets))
       case "getProfesseurs":
         return ok(await getProfesseurs(sheets, searchParams.get("idEtab") ?? ""))
+      case "getEtablissementsAvecStats":
+        return ok(await getEtablissementsAvecStats(sheets))
+      case "getEtablissementDetail":
+        return ok(await getEtablissementDetail(sheets, searchParams.get("idEtab")!))
       default:
         return err(`Action inconnue : ${action}`)
     }
@@ -1473,6 +1477,81 @@ async function addProfesseur(sheets: Sheets, data: Record<string, unknown>) {
     "Email": data.Email ?? "", "Etablissement ID": data.Etablissement_ID ?? "",
   })
   return { ok: true, ID: String(id) }
+}
+
+async function getEtablissementsAvecStats(sheets: Sheets) {
+  const [etabs, profs, scolarites, personnes] = await Promise.all([
+    sheetToObjects(sheets, "ETABLISSEMENT"),
+    sheetToObjects(sheets, "PROFESSEUR"),
+    sheetToObjects(sheets, "SCOLARITE"),
+    sheetToObjects(sheets, "PERSONNE"),
+  ])
+  return etabs.map(e => {
+    const idEtab = String(e["ID"])
+    const scolEtab = scolarites.filter(s => String(s["Etablissement ID"]) === idEtab)
+    const idsEnfants = new Set(scolEtab.map(s => String(s["Personne ID"])))
+    const idsFamilles = new Set(
+      personnes.filter(p => idsEnfants.has(String(p["ID"]))).map(p => String(p["Famille ID"]))
+    )
+    const nbAdultes = personnes.filter(
+      p => idsFamilles.has(String(p["Famille ID"])) && String(p["Categorie"]) !== "Enfant"
+    ).length
+    const nbProfs = profs.filter(p => String(p["Etablissement ID"]) === idEtab).length
+    return {
+      ID: idEtab,
+      Type: String(e["Type"] ?? ""),
+      Nom: String(e["Nom"] ?? ""),
+      nb_enfants: idsEnfants.size,
+      nb_adultes: nbAdultes,
+      nb_professeurs: nbProfs,
+    }
+  })
+}
+
+async function getEtablissementDetail(sheets: Sheets, idEtab: string) {
+  const [etabs, profs, scolarites, personnes, inscriptions] = await Promise.all([
+    sheetToObjects(sheets, "ETABLISSEMENT"),
+    sheetToObjects(sheets, "PROFESSEUR"),
+    sheetToObjects(sheets, "SCOLARITE"),
+    sheetToObjects(sheets, "PERSONNE"),
+    sheetToObjects(sheets, "INSCRIPTION"),
+  ])
+  const etab = etabs.find(e => String(e["ID"]) === idEtab)
+  const profById = new Map(profs.map(p => [String(p["ID"]), p]))
+  const scolEtab = scolarites.filter(s => String(s["Etablissement ID"]) === idEtab)
+  const eleves = scolEtab.map(sc => {
+    const p = personnes.find(x => String(x["ID"]) === String(sc["Personne ID"]))
+    const prof = profById.get(String(sc["Prof principal ID"] ?? ""))
+    const insc = inscriptions.filter(i => String(i["Personne ID"]) === String(sc["Personne ID"]))
+    const dernInsc = insc.length > 0 ? insc[insc.length - 1] : null
+    return {
+      ID_Membre: String(sc["Personne ID"]),
+      ID_Famille: String(p?.["Famille ID"] ?? ""),
+      Nom: String(p?.["Nom"] ?? ""),
+      Prenom: String(p?.["Prenom"] ?? ""),
+      Niveau: String(dernInsc?.["Niveau / Classe"] ?? ""),
+      ProfPrincipal: prof ? {
+        Nom: String(prof["Nom"] ?? ""),
+        Telephone: String(prof["Telephone"] ?? ""),
+        Email: String(prof["Email"] ?? ""),
+      } : null,
+    }
+  })
+  const professeurs = profs
+    .filter(p => String(p["Etablissement ID"]) === idEtab)
+    .map(p => ({
+      ID: String(p["ID"]),
+      Nom: String(p["Nom"] ?? ""),
+      Telephone: String(p["Telephone"] ?? ""),
+      Email: String(p["Email"] ?? ""),
+    }))
+  return {
+    ID: idEtab,
+    Type: String(etab?.["Type"] ?? ""),
+    Nom: String(etab?.["Nom"] ?? ""),
+    eleves,
+    professeurs,
+  }
 }
 
 async function addScolariteEntry(sheets: Sheets, body: Record<string, unknown>) {
