@@ -1,6 +1,8 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
+import Link from "next/link"
+import { useSearchParams } from "next/navigation"
 import { StickyNote, Search, GraduationCap, UserCheck, Sparkles, X } from "lucide-react"
 import { NIVEAUX_CECRL } from "@/lib/positionnement"
 import Pagination, { usePagination } from "@/components/Pagination"
@@ -13,6 +15,7 @@ type TypeBenef = "eleve" | "parent"
 
 interface BeneficiaireRow {
   id: string
+  idFamille: string
   type: TypeBenef
   prenom: string
   nom: string
@@ -36,6 +39,7 @@ function emptyEvalForm(): EvalForm {
 // Forme renvoyée par /api/sheets?action=getBeneficiaires (cf. route.ts getBeneficiaires).
 interface BeneficiaireSheet {
   ID_Personne: string
+  ID_Famille: string
   type: TypeBenef
   Prenom: string
   Nom: string
@@ -60,7 +64,8 @@ const SESSIONS: { key: Session; label: string }[] = [
   { key: "final", label: "Évaluation finale" },
 ]
 
-export default function NotesPage() {
+function NotesPage() {
+  const searchParams = useSearchParams()
   const [session, setSession] = useState<Session>("initial")
   const [beneficiaires, setBeneficiaires] = useState<BeneficiaireRow[]>([])
   const [evaluations, setEvaluations] = useState<Record<string, Record<Session, EvalForm>>>({})
@@ -70,6 +75,11 @@ export default function NotesPage() {
   const [error, setError] = useState<string | null>(null)
   const [savingId, setSavingId] = useState<string | null>(null)
   const [toast, setToast] = useState<{ message: string } | null>(null)
+
+  useEffect(() => {
+    const m = searchParams.get("membre")
+    if (m) setSearch(m)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!toast) return
@@ -86,7 +96,7 @@ export default function NotesPage() {
       .then(([benefRows, evalRows]: [BeneficiaireSheet[], EvaluationSheet[]]) => {
         setBeneficiaires(
           benefRows
-            .map(b => ({ id: b.ID_Personne, type: b.type, prenom: b.Prenom, nom: b.Nom }))
+            .map(b => ({ id: b.ID_Personne, idFamille: b.ID_Famille, type: b.type, prenom: b.Prenom, nom: b.Nom }))
             .sort((a, b) => `${a.prenom} ${a.nom}`.localeCompare(`${b.prenom} ${b.nom}`)),
         )
         const map: Record<string, Record<Session, EvalForm>> = {}
@@ -299,7 +309,16 @@ export default function NotesPage() {
                     <td className="px-4 py-2 whitespace-nowrap">
                       <span className="flex items-center gap-1.5">
                         <Icon size={12} className={b.type === "parent" ? "text-communication-dark" : "text-ateliers-dark"} />
-                        <span className="font-medium text-foreground">{b.prenom} {b.nom}</span>
+                        {b.idFamille ? (
+                          <Link
+                            href={`/familles/${b.idFamille}/membre/${b.id}`}
+                            className="font-medium text-foreground hover:text-familles-dark hover:underline"
+                          >
+                            {b.prenom} {b.nom}
+                          </Link>
+                        ) : (
+                          <span className="font-medium text-foreground">{b.prenom} {b.nom}</span>
+                        )}
                       </span>
                     </td>
                     <td className="px-3 py-2">
@@ -319,7 +338,7 @@ export default function NotesPage() {
                     {(["compEcrite", "compOrale", "exprEcrite", "exprOrale"] as const).map(field => (
                       <td key={field} className="px-3 py-2">
                         <input
-                          type="number" min={0} max={20} step={0.5}
+                          type="text" inputMode="decimal"
                           value={form[field]}
                           onChange={e => updateLocal(b.id, { [field]: e.target.value })}
                           onBlur={() => saveRow(b.id)}
@@ -394,5 +413,13 @@ export default function NotesPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function NotesPageWrapper() {
+  return (
+    <Suspense>
+      <NotesPage />
+    </Suspense>
   )
 }

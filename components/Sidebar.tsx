@@ -32,7 +32,7 @@ const navItems = [
   { href: "/notes",         label: "Notes",            icon: StickyNote,      accent: "bg-positionnement-light text-positionnement-dark", dot: "bg-positionnement" },
   { href: "/communication", label: "Communication",   icon: Megaphone,       accent: "bg-communication-light text-communication-dark", dot: "bg-communication" },
   { href: "/rapports",      label: "Rapports",         icon: List,            accent: "bg-rapports-light text-rapports-dark",           dot: "bg-rapports" },
-  { href: "/membres",       label: "Équipe",          icon: UserCog,         accent: "bg-slate-100 text-slate-700",                   dot: "bg-slate-500" },
+  { href: "/membres",       label: "Équipe et droits", icon: UserCog,         accent: "bg-slate-100 text-slate-700",                   dot: "bg-slate-500" },
 ]
 
 export default function Sidebar() {
@@ -55,7 +55,7 @@ export default function Sidebar() {
   })
 
   return (
-    <aside className="w-60 min-h-screen bg-surface border-r border-border flex flex-col shrink-0" aria-label="Menu principal">
+    <aside className="w-60 min-h-screen bg-surface border-r border-border flex flex-col shrink-0 print:hidden" aria-label="Menu principal">
       <div className="p-5 border-b border-border flex items-center gap-2.5">
         <Image src="/logo-area.png" alt="" width={28} height={28} className="rounded-lg" />
         <span className="font-semibold text-foreground text-sm tracking-wide">AREA Nantes</span>

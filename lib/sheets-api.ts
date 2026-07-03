@@ -379,6 +379,24 @@ export async function addScolarite(idMembre: string, idEtab: string, idProf: str
   return apiPost({ action: "addScolarite", idMembre, idEtab, idProf, rencontre }) as Promise<{ ok: boolean }>
 }
 
+// ── Évaluations ───────────────────────────────
+export interface Evaluation {
+  ID_Evaluation: string
+  ID_Personne: string
+  Session: string
+  Date: string
+  Niveau: string
+  Comprehension_Ecrite: number | null
+  Comprehension_Orale: number | null
+  Expression_Ecrite: number | null
+  Expression_Orale: number | null
+  Evaluateur: string
+}
+
+export async function fetchEvaluations(): Promise<Evaluation[]> {
+  return apiGet("getEvaluations") as Promise<Evaluation[]>
+}
+
 // ── Indicateur de configuration ────────────────
 export function isApiConfigured(): boolean {
   return !!API_URL

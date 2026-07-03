@@ -43,6 +43,8 @@ export interface GeneratePositionnementResponse {
   transcription?: string
   /** Audio synthétisé, encodé en data URI (audio/wav), prêt pour <audio src=...> */
   audio?: string
+  /** URL Drive de l'audio (archivage uniquement — non utilisée pour la lecture) */
+  audioUrl?: string
   /** Présent si la synthèse vocale a échoué — l'exercice texte reste utilisable */
   audioError?: string
   /** Image illustrative encodée en data URI (image/png), contextuelle au contenu de l'exercice */
@@ -343,16 +345,18 @@ export async function POST(request: Request) {
         const transcription = await callGeminiText(apiKey, buildTranscriptionPrompt(body.niveau, contenu))
         response.transcription = transcription
         const audioBase64 = await synthesizeAudioBase64(apiKey, transcription)
-        const cat = getNiveau(body.niveau)?.categories.find((c: { id: string }) => c.id === body.categorieId)
-        const today = new Date().toISOString().split("T")[0]
-        const audioNom = `Audio-${body.niveau}-${cat?.nom ?? body.categorieId}-${today}.wav`
-        const { fileId } = await uploadToDrive(
-          audioNom,
-          "audio/wav",
-          audioBase64,
-          POSITIONNEMENT_FOLDER_ID
-        )
-        response.audio = await makeFilePublic(fileId)
+        // Data URI utilisée pour le lecteur audio (<audio src=...> — les URL Drive bloquent le streaming CORS)
+        response.audio = `data:audio/wav;base64,${audioBase64}`
+        // Upload Drive pour archivage uniquement (URL stockée dans Sheets)
+        try {
+          const cat = getNiveau(body.niveau)?.categories.find((c: { id: string }) => c.id === body.categorieId)
+          const today = new Date().toISOString().split("T")[0]
+          const audioNom = `Audio-${body.niveau}-${cat?.nom ?? body.categorieId}-${today}.wav`
+          const { fileId } = await uploadToDrive(audioNom, "audio/wav", audioBase64, POSITIONNEMENT_FOLDER_ID)
+          response.audioUrl = await makeFilePublic(fileId)
+        } catch {
+          // Non bloquant : échec de l'archivage Drive ne doit pas priver l'utilisateur de l'audio
+        }
       } catch (err: unknown) {
         response.audioError = err instanceof Error ? err.message : "Échec de la génération audio."
       }
@@ -383,7 +387,7 @@ export async function POST(request: Request) {
         categorieId: body.categorieId,
         contenu,
         transcription: response.transcription,
-        audioUrl: response.audio,
+        audioUrl: response.audioUrl,
         imageUrl: response.image,
       })
     } catch (err: unknown) {
