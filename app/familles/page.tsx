@@ -325,16 +325,21 @@ export default function FamillesPage() {
 
       {/* ── Onglet Établissements ── */}
       {onglet === "etablissements" && (() => {
-        const types = ["École", "Collège", "Lycée"] as const
+        const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
+        const types = [
+          { label: "École",   key: "ecole" },
+          { label: "Collège", key: "college" },
+          { label: "Lycée",   key: "lycee" },
+        ]
         return (
           <div className="flex flex-col gap-8">
             {types.map(type => {
-              const etabsDuType = etablissements.filter(e => e.Type === type)
+              const etabsDuType = etablissements.filter(e => norm(e.Type) === type.key)
               return (
-                <div key={type}>
+                <div key={type.label}>
                   <div className="flex items-center gap-2 mb-3">
                     <GraduationCap size={16} className="text-familles-dark" />
-                    <h2 className="text-sm font-semibold text-foreground">{type}</h2>
+                    <h2 className="text-sm font-semibold text-foreground">{type.label}</h2>
                     <span className="text-xs px-1.5 py-0.5 rounded-full bg-familles-light text-familles-dark font-medium">{etabsDuType.length}</span>
                   </div>
                   {etabsDuType.length === 0
